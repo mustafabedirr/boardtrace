@@ -113,4 +113,4 @@ The live-analysis lock is a product invariant, not a UI preference. See [the sec
 
 ## License
 
-The license has not yet been determined.
+This project is available under the [MIT License](LICENSE).
