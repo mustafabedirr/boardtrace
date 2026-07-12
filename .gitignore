@@ -1,0 +1,72 @@
+# Node.js and package managers
+node_modules/
+.pnpm-store/
+.npm/
+.yarn/
+pnpm-debug.log*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Next.js and Vite
+.next/
+out/
+.vite/
+dist/
+
+# Python, environments, tooling, coverage
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# ML model files and generated outputs
+*.pt
+*.pth
+*.onnx
+ml/outputs/
+ml/runs/
+ml/checkpoints/
+
+# Environment files; retain the safe template
+.env
+.env.*
+!.env.example
+
+# IDE and operating-system files
+.idea/
+.vscode/
+*.iml
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Docker, logs, captures, and local service volumes
+docker-compose.override.yml
+docker-compose.local.yml
+*.log
+logs/
+tmp/
+temp/
+.capture/
+captures/
+local-object-storage/
+minio-data/
+postgres-data/
+redis-data/
+
+# Test and browser artifacts
+coverage/
+playwright-report/
+test-results/
+*.tsbuildinfo
