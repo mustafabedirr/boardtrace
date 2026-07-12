@@ -25,6 +25,7 @@ env/
 .ruff_cache/
 .coverage
 .coverage.*
+apps/api/coverage.xml
 htmlcov/
 
 # ML model files and generated outputs
@@ -69,4 +70,6 @@ redis-data/
 coverage/
 playwright-report/
 test-results/
+.playwright-mcp/
+.vitest/
 *.tsbuildinfo

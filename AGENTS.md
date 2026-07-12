@@ -49,6 +49,18 @@ Capture only the selected board region and only necessary data. Do not collect c
 
 The backend owns game state and release decisions. Validate inputs with Pydantic, preserve Python type hints, use structured audit logs, and do not swallow exceptions.
 
+## FastAPI Foundation Rules
+
+1. Every endpoint must use typed request and response models and live under a versioned router.
+2. Preserve the application factory; imports must not start network listeners, workers, or external resources.
+3. Read environment configuration only through typed settings.
+4. Never log credentials, authorization headers, request bodies, screenshots, FEN values, or secrets.
+5. API failures must use the standard error envelope and include a string request ID.
+6. Do not use global mutable application state; test-only routes are injected per app instance only.
+7. Health endpoints report only real dependencies and must not claim database, worker, or engine readiness before those integrations exist.
+8. API changes require API tests and OpenAPI contract validation.
+9. No endpoint may expose live analysis, engine output, best moves, evaluations, principal variations, mate scores, or analysis payloads before `ANALYSIS_AVAILABLE`.
+
 # Frontend Rules
 
 Use strict TypeScript. The client is untrusted and may display only server-authorized information.
@@ -76,6 +88,10 @@ Document rationale, maintenance/security fit, cost, and why approved tools are i
 # Testing Requirements
 
 Add proportionate automated tests, especially for security invariants. Do not hide failures or report mocks, placeholders, or TODOs as complete.
+
+# Tooling Quality Gates
+
+ESLint and Prettier are mandatory for JavaScript and TypeScript. Ruff and Mypy are mandatory for Python. New code is not complete until it has been tested with the relevant language's standard runner. Resolve format and lint errors before committing; agents must not bypass quality-gate commands. Generated files must not be manually edited.
 
 # Documentation Requirements
 

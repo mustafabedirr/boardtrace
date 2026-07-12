@@ -1,0 +1,96 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import 'shadcn/tailwind.css';
+@custom-variant dark (&:is(.dark *));
+@theme inline {
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-primary: var(--primary);
+  --color-secondary: var(--secondary);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --color-info: var(--info);
+  --color-move-best: var(--move-best);
+  --color-move-excellent: var(--move-excellent);
+  --color-move-good: var(--move-good);
+  --color-move-book: var(--move-book);
+  --color-move-inaccuracy: var(--move-inaccuracy);
+  --color-move-mistake: var(--move-mistake);
+  --color-move-blunder: var(--move-blunder);
+  --color-move-forced: var(--move-forced);
+  --color-move-unknown: var(--move-unknown);
+  --color-board-light: var(--board-light);
+  --color-board-dark: var(--board-dark);
+}
+:root {
+  --background: #f6f8fc;
+  --foreground: #101522;
+  --surface: #fff;
+  --primary: #4f46e5;
+  --primary-foreground: #fff;
+  --secondary: #0891b2;
+  --muted: #f0f3f8;
+  --muted-foreground: #748096;
+  --border: #d9e0ea;
+  --success: #34d399;
+  --warning: #fbbf24;
+  --danger: #fb7185;
+  --info: #22d3ee;
+  --success-surface: #ecfdf5;
+  --success-border: #6ee7b7;
+  --warning-surface: #fffbeb;
+  --warning-border: #fcd34d;
+  --danger-surface: #fff1f2;
+  --danger-border: #fda4af;
+  --info-surface: #ecfeff;
+  --info-border: #67e8f9;
+  --move-best: #34d399;
+  --move-excellent: #5eead4;
+  --move-good: #60a5fa;
+  --move-book: #a78bfa;
+  --move-inaccuracy: #fbbf24;
+  --move-mistake: #fb923c;
+  --move-blunder: #fb7185;
+  --move-forced: #94a3b8;
+  --move-unknown: #64748b;
+  --board-light: #e5eaf2;
+  --board-dark: #8190a8;
+}
+.dark {
+  --background: #090b10;
+  --foreground: #f4f7fb;
+  --surface: #11151e;
+  --primary: #818cf8;
+  --primary-foreground: #090b10;
+  --secondary: #22d3ee;
+  --muted: #161b26;
+  --muted-foreground: #aab4c4;
+  --border: #2c3547;
+  --success-surface: #092f27;
+  --success-border: #16745b;
+  --warning-surface: #3c2d04;
+  --warning-border: #a16207;
+  --danger-surface: #3b1220;
+  --danger-border: #9f1239;
+  --info-surface: #083344;
+  --info-border: #0e7490;
+  --board-light: #b8c4d6;
+  --board-dark: #526079;
+}
+body {
+  background: var(--background);
+  color: var(--foreground);
+}
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0ms !important;
+    transition-duration: 0ms !important;
+  }
+}

@@ -2,5 +2,41 @@
   "name": "boardtrace",
   "version": "0.0.0",
   "private": true,
-  "packageManager": "pnpm@11.11.0"
+  "packageManager": "pnpm@11.11.0",
+  "engines": {
+    "node": ">=20.19.0 <25"
+  },
+  "scripts": {
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit --project tsconfig.json",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "build:web": "pnpm --filter web build",
+    "check": "node scripts/run-quality-checks.mjs",
+    "python:format:check": "uv run ruff format --check .",
+    "python:lint": "uv run ruff check .",
+    "python:typecheck": "uv run mypy .",
+    "python:test": "uv run pytest",
+    "python:test:coverage": "uv run pytest --cov",
+    "lint:api": "uv run ruff check apps/api",
+    "format:api": "uv run ruff format apps/api",
+    "format:check:api": "uv run ruff format --check apps/api",
+    "typecheck:api": "uv run mypy apps/api",
+    "test:api": "uv run pytest apps/api/tests -W error",
+    "test:coverage:api": "uv run pytest apps/api/tests --cov=boardtrace_api --cov-branch --cov-report=term-missing --cov-report=xml:apps/api/coverage.xml -W error",
+    "check:api": "pnpm lint:api && pnpm format:check:api && pnpm typecheck:api && pnpm test:api"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^26.1.1",
+    "@vitest/coverage-v8": "^4.1.10",
+    "eslint": "^9.39.5",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.9.5",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.63.0",
+    "vitest": "^4.1.10"
+  }
 }

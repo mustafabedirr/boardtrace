@@ -1,0 +1,63 @@
+[project]
+name = "boardtrace-tooling"
+version = "0.0.0"
+description = "Repository-wide Python quality tooling for BoardTrace"
+requires-python = ">=3.12,<3.14"
+dependencies = []
+
+[tool.uv.workspace]
+members = ["apps/api"]
+
+[dependency-groups]
+dev = [
+  "mypy>=1.15,<2",
+  "pytest>=8.3,<9",
+  "pytest-cov>=6.0,<7",
+  "ruff>=0.11,<1",
+]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = [
+  ".venv",
+  "coverage",
+  "dist",
+  "htmlcov",
+  "ml/checkpoints",
+  "ml/outputs",
+  "ml/runs",
+  "node_modules",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/python/**/*.py" = ["S101"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["tests/python"]
+exclude = '(?x)(^|/)(\.venv|node_modules|dist|coverage|htmlcov|ml/(checkpoints|outputs|runs))/'
+warn_unused_configs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests/python"]
+python_files = ["test_*.py"]
+addopts = "-ra --strict-markers --strict-config"
+
+[tool.coverage.run]
+branch = true
+source = ["apps", "packages", "workers"]
+omit = ["tests/*", "*/generated/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+  "pragma: no cover",
+  "if TYPE_CHECKING:",
+]

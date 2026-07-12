@@ -18,16 +18,16 @@ BoardTrace provides no live assistance. During an active game, no engine evaluat
 
 ## Approved technology stack
 
-| Area | Technologies |
-| --- | --- |
-| Web | Next.js, React, TypeScript, Tailwind CSS, shadcn/ui, TanStack Query, Zustand, chess.js, react-chessboard, Recharts |
-| Extension | Chrome Manifest V3, React, TypeScript, Vite, Canvas API, OffscreenCanvas, Web Workers |
-| Backend | Python, FastAPI, Pydantic, SQLAlchemy 2, Alembic, python-chess |
-| Vision | PyTorch, OpenCV, Pillow, Albumentations, ONNX, ONNX Runtime |
-| Engine | Native Stockfish via python-chess UCI |
-| Infrastructure | PostgreSQL, Redis, Celery, MinIO/S3-compatible storage, Docker Compose |
-| Testing | pytest, Vitest, Playwright |
-| Packages | pnpm 11.11.0; Python is planned to use uv |
+| Area           | Technologies                                                                                                       |
+| -------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Web            | Next.js, React, TypeScript, Tailwind CSS, shadcn/ui, TanStack Query, Zustand, chess.js, react-chessboard, Recharts |
+| Extension      | Chrome Manifest V3, React, TypeScript, Vite, Canvas API, OffscreenCanvas, Web Workers                              |
+| Backend        | Python, FastAPI, Pydantic, SQLAlchemy 2, Alembic, python-chess                                                     |
+| Vision         | PyTorch, OpenCV, Pillow, Albumentations, ONNX, ONNX Runtime                                                        |
+| Engine         | Native Stockfish via python-chess UCI                                                                              |
+| Infrastructure | PostgreSQL, Redis, Celery, MinIO/S3-compatible storage, Docker Compose                                             |
+| Testing        | pytest, Vitest, Playwright                                                                                         |
+| Packages       | pnpm 11.11.0; Python is planned to use uv                                                                          |
 
 ## Planned repository structure
 
@@ -45,13 +45,67 @@ docs/           # Architecture, decisions, security, roadmap
 
 Repository foundation, application scaffolding, capture and ingestion, secure analysis pipeline, post-game reporting, then hardening. See [the roadmap](docs/roadmap/development-phases.md).
 
-## Current status
+## Backend Development
 
-Repository initialization only. No application framework, database, container service, worker, or product feature has been scaffolded.
+The FastAPI foundation is in `apps/api`. It includes typed settings, an application factory, versioned health endpoints, CORS and trusted-host protection, request IDs, security headers, structured logging, and standard errors.
 
-## Local setup
+It intentionally does **not** include PostgreSQL, Redis, workers, Stockfish, authentication, game models, or analysis endpoints. Engine output remains unavailable to every client-facing API surface during live play.
 
-Local setup will be introduced in later prompts.
+Prepare all workspace packages, then run API checks:
+
+```powershell
+uv sync --all-packages
+pnpm check:api
+pnpm test:coverage:api
+```
+
+For local development only, start the API with:
+
+```powershell
+uv run --project apps/api uvicorn boardtrace_api.main:app --host 127.0.0.1 --port 8000
+```
+
+Available foundation endpoints are `/api/v1/health/live`, `/api/v1/health/ready`, `/openapi.json`, and `/docs`.
+
+## Development tooling
+
+BoardTrace uses pnpm 11.11.0 for JavaScript and TypeScript tooling and uv for Python tooling. Install [pnpm](https://pnpm.io/installation) and [uv](https://docs.astral.sh/uv/getting-started/installation/) before running local quality checks.
+
+```powershell
+pnpm install
+uv sync
+```
+
+Use these JavaScript and TypeScript commands:
+
+```powershell
+pnpm format
+pnpm format:check
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm test:coverage
+pnpm check
+pnpm lint:api
+pnpm format:api
+pnpm format:check:api
+pnpm typecheck:api
+pnpm test:api
+pnpm test:coverage:api
+pnpm check:api
+```
+
+Use these Python commands:
+
+```powershell
+uv run ruff format --check .
+uv run ruff check .
+uv run mypy .
+uv run pytest
+uv run pytest --cov
+```
+
+`pnpm check` runs the JavaScript and TypeScript format check, lint, type check, and test steps in sequence. Run both command groups before submitting work that touches both ecosystems.
 
 ## Security and fair play
 
