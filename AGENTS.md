@@ -77,6 +77,15 @@ Keep inputs board-scoped. Version models and preprocessing deliberately; do not 
 
 Use Alembic for every schema change. Model state transitions and locks explicitly; never bypass migrations.
 
+- Use SQLAlchemy 2 typed declarative mappings only; persistence models are never client-facing schemas.
+- SQLite is not permitted for persistence tests; integration and migration tests validate real PostgreSQL behavior.
+- Repositories never commit. Transaction boundaries are explicit in services or typed transaction helpers.
+- Database URLs and passwords must not be logged, returned in errors, or committed.
+- Binary captures and model artifacts are stored outside PostgreSQL; JSONB defaults must be callable.
+- Alembic upgrade and downgrade must be tested for every schema revision, and cascade behavior documented.
+- Engines and sessions are instance-scoped; imports must not open database connections.
+- Engine-analysis persistence remains locked from client APIs until the server-owned analysis release state permits it.
+
 # UI and Branding Rules
 
 Use shadcn/ui, Tailwind CSS, and Lucide React. Primary font: IBM Plex Sans; technical font: IBM Plex Mono. Default dark-first colors: primary `#6366F1`, secondary `#06B6D4`, background `#090B10`, surface `#11151E`, border `#2C3547`, light background `#F6F8FC`, light surface `#FFFFFF`, dark text `#F4F7FB`, light text `#101522`. Use controlled 8–12 px radii, thin borders, and limited shadows. No glassmorphism or neon esports aesthetic. Do not use color alone for status; target WCAG 2.2 AA.

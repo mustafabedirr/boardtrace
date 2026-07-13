@@ -2,14 +2,24 @@
 name = "boardtrace-api"
 version = "0.1.0"
 requires-python = ">=3.12,<3.14"
-dependencies = ["fastapi>=0.128,<1", "pydantic-settings>=2.7,<3", "uvicorn>=0.34,<1"]
+dependencies = [
+  "alembic>=1.16,<2",
+  "asyncpg>=0.30,<1",
+  "fastapi>=0.128,<1",
+  "pwdlib[argon2]>=0.3,<1",
+  "pyjwt>=2.10,<3",
+  "pydantic-settings>=2.7,<3",
+  "email-validator>=2.2,<3",
+  "sqlalchemy>=2.0.41,<3",
+  "uvicorn>=0.34,<1",
+]
 
 [build-system]
 requires = ["hatchling>=1.27,<2"]
 build-backend = "hatchling.build"
 
 [dependency-groups]
-dev = ["httpx>=0.28,<1", "pytest>=8.3,<9"]
+dev = ["httpx>=0.28,<1", "pytest>=8.3,<9", "pytest-asyncio>=1.0,<2"]
 
 [tool.ruff]
 extend = "../../pyproject.toml"

@@ -36,13 +36,16 @@ def error_response(
 
 
 async def api_error_handler(request: Request, exc: ApiError) -> JSONResponse:
-    return error_response(
+    response = error_response(
         request,
         status_code=exc.status_code,
         content=ErrorResponse(
             error=ErrorDetail(code=exc.code, message=exc.message, request_id=request_id(request))
         ),
     )
+    if exc.status_code == 401 and exc.code == "authentication_required":
+        response.headers["WWW-Authenticate"] = "Bearer"
+    return response
 
 
 async def http_error_handler(request: Request, exc: StarletteHTTPException) -> JSONResponse:

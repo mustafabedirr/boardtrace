@@ -50,6 +50,13 @@ warn_unused_configs = true
 testpaths = ["tests/python"]
 python_files = ["test_*.py"]
 addopts = "-ra --strict-markers --strict-config"
+asyncio_mode = "strict"
+markers = [
+  "unit: isolated unit test",
+  "integration: requires a real external dependency",
+  "database: requires PostgreSQL",
+  "migration: exercises Alembic migrations",
+]
 
 [tool.coverage.run]
 branch = true

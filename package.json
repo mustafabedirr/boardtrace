@@ -26,7 +26,14 @@
     "typecheck:api": "uv run mypy apps/api",
     "test:api": "uv run pytest apps/api/tests -W error",
     "test:coverage:api": "uv run pytest apps/api/tests --cov=boardtrace_api --cov-branch --cov-report=term-missing --cov-report=xml:apps/api/coverage.xml -W error",
-    "check:api": "pnpm lint:api && pnpm format:check:api && pnpm typecheck:api && pnpm test:api"
+    "check:api": "pnpm lint:api && pnpm format:check:api && pnpm typecheck:api && pnpm test:api",
+    "db:migrate": "uv run --project apps/api alembic -c apps/api/alembic.ini revision --autogenerate",
+    "db:upgrade": "uv run --project apps/api alembic -c apps/api/alembic.ini upgrade head",
+    "db:current": "uv run --project apps/api alembic -c apps/api/alembic.ini current",
+    "db:downgrade": "uv run --project apps/api alembic -c apps/api/alembic.ini downgrade base",
+    "db:revision": "uv run --project apps/api alembic -c apps/api/alembic.ini revision",
+    "test:db": "uv run pytest apps/api/tests -m database",
+    "test:migrations": "uv run pytest apps/api/tests -m migration"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

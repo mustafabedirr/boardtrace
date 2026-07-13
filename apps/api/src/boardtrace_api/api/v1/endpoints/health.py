@@ -1,5 +1,7 @@
 from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse
 
+from boardtrace_api.db.health import database_ready
 from boardtrace_api.schemas.errors import ErrorResponse
 from boardtrace_api.schemas.health import HealthResponse, ReadinessResponse
 
@@ -21,5 +23,10 @@ def live(request: Request) -> HealthResponse:
     response_model=ReadinessResponse,
     responses={422: {"model": ErrorResponse}},
 )
-def ready() -> ReadinessResponse:
-    return ReadinessResponse(status="ready", checks={"application": "ok"})
+async def ready(request: Request) -> ReadinessResponse | JSONResponse:
+    if await database_ready(request.app.state.database_engine):
+        return ReadinessResponse(status="ready", checks={"application": "ok", "database": "ok"})
+    return JSONResponse(
+        status_code=503,
+        content={"status": "not_ready", "checks": {"application": "ok", "database": "unavailable"}},
+    )

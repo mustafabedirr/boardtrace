@@ -17,6 +17,7 @@ from boardtrace_api.core.errors import (
     validation_error_handler,
 )
 from boardtrace_api.core.middleware import RequestIdMiddleware
+from boardtrace_api.db.engine import create_database_engine
 from boardtrace_api.logging import configure_logging
 
 
@@ -28,10 +29,13 @@ def create_app(
     logger = configure_logging(resolved.log_level, resolved.log_format)
 
     @asynccontextmanager
-    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.info("application started", extra={"environment": resolved.environment.value})
-        yield
-        logger.info("application stopped", extra={"environment": resolved.environment.value})
+        try:
+            yield
+        finally:
+            await app.state.database_engine.dispose()
+            logger.info("application stopped", extra={"environment": resolved.environment.value})
 
     app = FastAPI(
         title="BoardTrace API",
@@ -41,6 +45,7 @@ def create_app(
         openapi_tags=[{"name": "health", "description": "Application health."}],
     )
     app.state.settings = resolved
+    app.state.database_engine = create_database_engine(resolved)
     app.exception_handler(ApiError)(api_error_handler)
     app.exception_handler(StarletteHTTPException)(http_error_handler)
     app.exception_handler(RequestValidationError)(validation_error_handler)

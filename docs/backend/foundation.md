@@ -1,6 +1,6 @@
 # Backend Foundation
 
-The API uses an application factory, typed settings, versioned routers, request IDs, structured logging, security headers, standard error envelopes, and health/readiness endpoints. Database and worker integrations remain future module boundaries.
+The API uses an application factory, typed settings, versioned routers, request IDs, structured logging, security headers, standard error envelopes, and health/readiness endpoints. PostgreSQL readiness is implemented; workers remain future module boundaries.
 
 ## Foundation contract
 
