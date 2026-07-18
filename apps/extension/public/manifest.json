@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "BoardTrace Capture",
+  "version": "0.1.0",
+  "description": "Consent-based, board-scoped capture for post-game review.",
+  "action": {
+    "default_title": "Select a chessboard to capture"
+  },
+  "background": {
+    "service_worker": "service-worker.js",
+    "type": "module"
+  },
+  "permissions": ["activeTab", "scripting"],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; base-uri 'self'"
+  }
+}

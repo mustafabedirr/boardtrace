@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from boardtrace_api.auth.passwords import PasswordService
 from boardtrace_api.auth.service import AuthenticationError, AuthenticationService
-from boardtrace_api.auth.tokens import TokenError, TokenService
+from boardtrace_api.auth.tokens import TokenError, TokenScopeError, TokenService
 from boardtrace_api.core.errors import ApiError
 from boardtrace_api.db.dependencies import get_db_session
 from boardtrace_api.models import User
@@ -136,6 +136,48 @@ async def get_current_user(
 
 
 CurrentUserDep = Annotated[User, Depends(get_current_user)]
+
+
+async def _get_extension_user(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
+    auth: AuthServiceDep,
+    required_scope: str,
+) -> User:
+    if credentials is None:
+        raise ApiError("authentication_required", "Authentication failed.", 401)
+    try:
+        return await auth.extension_user(credentials.credentials, required_scope)
+    except TokenScopeError as error:
+        raise ApiError("insufficient_scope", "Authorization failed.", 403) from error
+    except (AuthenticationError, TokenError) as error:
+        raise ApiError("authentication_required", "Authentication failed.", 401) from error
+
+
+async def get_extension_user(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
+    auth: AuthServiceDep,
+) -> User:
+    """Compatibility dependency; endpoint routes use explicit scope dependencies below."""
+    return await _get_extension_user(credentials, auth, "games:ingest")
+
+
+async def get_extension_ingest_user(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
+    auth: AuthServiceDep,
+) -> User:
+    return await _get_extension_user(credentials, auth, "games:ingest")
+
+
+async def get_extension_status_user(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
+    auth: AuthServiceDep,
+) -> User:
+    return await _get_extension_user(credentials, auth, "games:read-status")
+
+
+ExtensionIngestUserDep = Annotated[User, Depends(get_extension_ingest_user)]
+ExtensionStatusUserDep = Annotated[User, Depends(get_extension_status_user)]
+ExtensionUserDep = Annotated[User, Depends(get_extension_user)]
 
 
 @router.post(

@@ -42,7 +42,10 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_issuer: str = "boardtrace-api"
     jwt_audience: str = "boardtrace-clients"
+    extension_jwt_audience: str = "boardtrace-extension"
     access_token_lifetime_seconds: int = Field(default=900, ge=60, le=3600)
+    extension_access_token_lifetime_seconds: int = Field(default=600, ge=60, le=3600)
+    extension_pairing_lifetime_seconds: int = Field(default=300, ge=60, le=900)
     refresh_token_lifetime_seconds: int = Field(default=2_592_000, ge=3600, le=7_776_000)
     refresh_token_pepper: str | None = Field(default=None, repr=False)
     password_min_length: int = Field(default=12, ge=8, le=128)

@@ -63,8 +63,23 @@ class AuthSession(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     user: Mapped[User] = relationship(back_populates="auth_sessions")
 
 
+class ExtensionPairing(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
+    __tablename__ = "extension_pairings"
+    code_digest: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    extension_id: Mapped[str] = mapped_column(String(128))
+    scopes: Mapped[list[str]] = mapped_column(JSONB)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    redeemed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class Game(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "games"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "platform", "source_game_id", name="uq_games_user_platform_source_game_id"
+        ),
+    )
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     status: Mapped[GameStatus] = mapped_column(enum_type(GameStatus, "game_status"), index=True)
     platform: Mapped[str] = mapped_column(String(100))
@@ -74,6 +89,11 @@ class Game(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     analysis_available_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     initial_fen: Mapped[str | None] = mapped_column(Text())
+    source_game_id: Mapped[str | None] = mapped_column(String(200))
+    ingestion_key: Mapped[str | None] = mapped_column(String(64), unique=True, index=True)
+    ingestion_payload_hash: Mapped[str | None] = mapped_column(String(64))
+    normalized_moves: Mapped[list[str] | None] = mapped_column(JSONB)
+    completion_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     user: Mapped[User] = relationship(back_populates="games")
     frames: Mapped[list["GameFrame"]] = relationship(
         back_populates="game", cascade="all, delete-orphan"

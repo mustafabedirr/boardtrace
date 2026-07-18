@@ -107,6 +107,17 @@ uv run pytest --cov
 
 `pnpm check` runs the JavaScript and TypeScript format check, lint, type check, and test steps in sequence. Run both command groups before submitting work that touches both ecosystems.
 
+## Chrome extension foundation
+
+`apps/extension` contains the Manifest V3 capture foundation. Build it with
+`pnpm --filter @boardtrace/extension build`, then load its `dist` directory as
+an unpacked extension in Chrome. The action injects capture code only for the
+active tab after a user click; it has no host permissions or persistent local
+capture storage. Its current observer supports BoardTrace-prefixed raw board
+attributes only—site adapters, image capture, move inference, and transport
+are intentionally outside this phase. See
+[extension capture guardrails](docs/security/extension-capture-guardrails.md).
+
 ## Security and fair play
 
 The live-analysis lock is a product invariant, not a UI preference. See [the security policy](docs/security/live-analysis-lock.md).

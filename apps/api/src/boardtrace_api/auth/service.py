@@ -129,3 +129,11 @@ class AuthenticationService:
         if user is None or not user.is_active:
             raise AuthenticationError
         return user
+
+    async def extension_user(self, token: str, required_scope: str) -> User:
+        user = await self._session.get(
+            User, self._tokens.decode_extension_token(token, required_scope)
+        )
+        if user is None or not user.is_active:
+            raise AuthenticationError
+        return user

@@ -21,10 +21,25 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    """Create the reviewed PostgreSQL schema from the typed metadata."""
+    """Create the Prompt 5 baseline from the current typed metadata.
+
+    This historical revision predates authentication and completed-game
+    ingestion.  The metadata is imported at migration runtime, so explicitly
+    remove later additions before subsequent additive revisions introduce
+    them in their own order.
+    """
     bind = op.get_bind()
     Game.metadata.create_all(bind=bind)
+    op.drop_table("extension_pairings")
     op.drop_table("auth_sessions")
+    for column in (
+        "completion_verified_at",
+        "normalized_moves",
+        "ingestion_payload_hash",
+        "ingestion_key",
+        "source_game_id",
+    ):
+        op.drop_column("games", column)
     for column in (
         "password_changed_at",
         "last_login_at",

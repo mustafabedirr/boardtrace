@@ -13,6 +13,7 @@ def test_persistence_metadata_contains_expected_tables() -> None:
         "detected_moves",
         "engine_analyses",
         "engine_versions",
+        "extension_pairings",
         "game_frames",
         "games",
         "model_versions",

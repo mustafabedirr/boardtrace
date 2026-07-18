@@ -43,8 +43,10 @@ async def api_error_handler(request: Request, exc: ApiError) -> JSONResponse:
             error=ErrorDetail(code=exc.code, message=exc.message, request_id=request_id(request))
         ),
     )
-    if exc.status_code == 401 and exc.code == "authentication_required":
+    if exc.status_code == 401:
         response.headers["WWW-Authenticate"] = "Bearer"
+    if exc.status_code in {401, 403}:
+        response.headers["Cache-Control"] = "no-store"
     return response
 
 
