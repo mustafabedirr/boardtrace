@@ -29,14 +29,20 @@ def unused_port() -> int:
 
 
 @contextmanager
-def uvicorn_process(database_url: str) -> Iterator[tuple[subprocess.Popen[str], str]]:
+def uvicorn_process(
+    database_url: str, extra_environment: dict[str, str] | None = None
+) -> Iterator[tuple[subprocess.Popen[str], str]]:
     port = unused_port()
-    environment = os.environ | {
-        "BOARDTRACE_DATABASE_URL": database_url,
-        "BOARDTRACE_JWT_SIGNING_SECRET": TEST_JWT_SECRET,
-        "BOARDTRACE_REFRESH_TOKEN_PEPPER": TEST_REFRESH_PEPPER,
-        "BOARDTRACE_LOG_FORMAT": "console",
-    }
+    environment = (
+        os.environ
+        | {
+            "BOARDTRACE_DATABASE_URL": database_url,
+            "BOARDTRACE_JWT_SIGNING_SECRET": TEST_JWT_SECRET,
+            "BOARDTRACE_REFRESH_TOKEN_PEPPER": TEST_REFRESH_PEPPER,
+            "BOARDTRACE_LOG_FORMAT": "console",
+        }
+        | (extra_environment or {})
+    )
     creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
     process = subprocess.Popen(
         [

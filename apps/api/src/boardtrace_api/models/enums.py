@@ -45,7 +45,15 @@ class AnalysisJobType(StrEnum):
 
 class AnalysisJobStatus(StrEnum):
     PENDING = "PENDING"
+    QUEUED = "QUEUED"
+    CLAIMED = "CLAIMED"
     RUNNING = "RUNNING"
+    RETRY_SCHEDULED = "RETRY_SCHEDULED"
     SUCCEEDED = "SUCCEEDED"
     FAILED = "FAILED"
     CANCELLED = "CANCELLED"
+
+
+class AnalysisOutboxStatus(StrEnum):
+    PENDING = "PENDING"
+    PUBLISHED = "PUBLISHED"

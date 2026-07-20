@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from hashlib import sha256
 from json import dumps
 from typing import cast
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from boardtrace_api.models import Game
 from boardtrace_api.models.enums import GameStatus
 from boardtrace_api.schemas.ingestion import CompletedGameIngestionRequest
+from boardtrace_api.services.analysis_jobs import AnalysisJobService
 
 
 class IngestionConflictError(Exception):
@@ -33,6 +34,7 @@ class CompletedGameIngestionService:
         if existing is not None:
             if existing.user_id != user_id or existing.ingestion_payload_hash != payload_hash:
                 raise IngestionConflictError
+            await AnalysisJobService(self._session).create_for_completed_game(existing.id, uuid4())
             return existing
 
         game = Game(
@@ -52,6 +54,7 @@ class CompletedGameIngestionService:
         )
         self._session.add(game)
         await self._session.flush()
+        await AnalysisJobService(self._session).create_for_completed_game(game.id, uuid4())
         return game
 
     async def get_for_user(self, game_id: UUID, user_id: UUID) -> Game | None:

@@ -5,7 +5,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from boardtrace_api.models.enums import GameResult, GameStatus, PlayerColor
+from boardtrace_api.models.enums import AnalysisJobStatus, GameResult, GameStatus, PlayerColor
 
 UCI_MOVE_PATTERN = r"^[a-h][1-8][a-h][1-8][qrbn]?$"
 
@@ -47,3 +47,5 @@ class IngestionStatusResponse(BaseModel):
     analysis_release_state: Literal["LOCKED"]
     analysis_available: Literal[False]
     normalized_move_count: int
+    analysis_job_id: UUID
+    analysis_job_status: AnalysisJobStatus

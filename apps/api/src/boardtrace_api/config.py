@@ -1,6 +1,6 @@
 from enum import StrEnum
 
-from pydantic import Field, PostgresDsn, model_validator
+from pydantic import Field, PostgresDsn, RedisDsn, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -38,6 +38,18 @@ class Settings(BaseSettings):
     database_max_overflow: int = Field(default=10, ge=0, le=100)
     database_pool_timeout: int = Field(default=30, ge=1, le=300)
     database_pool_recycle: int = Field(default=1800, ge=0, le=86400)
+    redis_url: RedisDsn = RedisDsn("redis://localhost:6379/0")
+    analysis_queue_name: str = "boardtrace.analysis.jobs"
+    analysis_lease_seconds: int = Field(default=120, ge=30, le=3600)
+    analysis_heartbeat_seconds: int = Field(default=30, ge=5, le=300)
+    analysis_task_soft_time_limit_seconds: int = Field(default=240, ge=30, le=3600)
+    analysis_task_time_limit_seconds: int = Field(default=300, ge=60, le=7200)
+    analysis_retry_base_delay_seconds: int = Field(default=30, ge=1, le=3600)
+    analysis_retry_max_delay_seconds: int = Field(default=900, ge=1, le=86400)
+    analysis_retry_max_jitter_seconds: int = Field(default=5, ge=0, le=300)
+    stockfish_path: str | None = None
+    stockfish_threads: int = Field(default=1, ge=1, le=128)
+    stockfish_hash_mb: int = Field(default=64, ge=1, le=65_536)
     jwt_signing_secret: str | None = Field(default=None, repr=False)
     jwt_algorithm: str = "HS256"
     jwt_issuer: str = "boardtrace-api"
@@ -55,4 +67,10 @@ class Settings(BaseSettings):
     def validate_cors(self) -> "Settings":
         if self.environment is Environment.PRODUCTION and "*" in self.cors_allowed_origins:
             raise ValueError("Production CORS origins cannot include wildcard")
+        if self.analysis_heartbeat_seconds >= self.analysis_lease_seconds:
+            raise ValueError("Analysis heartbeat must be shorter than the lease")
+        if self.analysis_task_soft_time_limit_seconds >= self.analysis_task_time_limit_seconds:
+            raise ValueError("Analysis soft time limit must be shorter than the hard time limit")
+        if self.analysis_retry_max_delay_seconds < self.analysis_retry_base_delay_seconds:
+            raise ValueError("Analysis retry maximum delay must not be below its base delay")
         return self

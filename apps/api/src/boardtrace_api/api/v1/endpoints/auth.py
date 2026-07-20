@@ -175,8 +175,26 @@ async def get_extension_status_user(
     return await _get_extension_user(credentials, auth, "games:read-status")
 
 
+async def get_analysis_status_reader(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
+    auth: AuthServiceDep,
+) -> User:
+    if credentials is None:
+        raise ApiError("authentication_required", "Authentication failed.", 401)
+    try:
+        return await auth.current_user(credentials.credentials)
+    except (AuthenticationError, TokenError):
+        try:
+            return await auth.extension_user(credentials.credentials, "games:read-status")
+        except TokenScopeError as error:
+            raise ApiError("insufficient_scope", "Authorization failed.", 403) from error
+        except (AuthenticationError, TokenError) as error:
+            raise ApiError("authentication_required", "Authentication failed.", 401) from error
+
+
 ExtensionIngestUserDep = Annotated[User, Depends(get_extension_ingest_user)]
 ExtensionStatusUserDep = Annotated[User, Depends(get_extension_status_user)]
+AnalysisStatusReaderDep = Annotated[User, Depends(get_analysis_status_reader)]
 ExtensionUserDep = Annotated[User, Depends(get_extension_user)]
 
 

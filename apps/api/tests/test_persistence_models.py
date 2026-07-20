@@ -9,6 +9,7 @@ def test_persistence_metadata_contains_expected_tables() -> None:
     assert Game.metadata is Base.metadata
     assert set(Base.metadata.tables) == {
         "analysis_jobs",
+        "analysis_job_outbox",
         "auth_sessions",
         "detected_moves",
         "engine_analyses",

@@ -29,9 +29,10 @@ def test_empty_database_upgrade_downgrade_and_reupgrade(
 
     command.upgrade(migration_config(), "head")
     revision, metadata_type = asyncio.run(revision_and_metadata_type())
-    assert revision == "bc9d0e1f2a3b"
+    assert revision == "ef2a3b4c5d6e"
     assert metadata_type == "jsonb"
     assert "extension_pairings" in asyncio.run(public_table_names())
+    assert "analysis_job_outbox" in asyncio.run(public_table_names())
 
 
 async def public_table_names() -> set[str]:

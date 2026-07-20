@@ -57,6 +57,9 @@ markers = [
   "database: requires PostgreSQL",
   "migration: exercises Alembic migrations",
   "concurrency: exercises PostgreSQL locking and concurrent transactions",
+  "queue: exercises analysis queue and worker orchestration",
+  "runtime: exercises real process runtime behavior",
+  "security: exercises security invariants",
 ]
 
 [tool.coverage.run]

@@ -9,6 +9,7 @@ from sqlalchemy import (
     DateTime,
     Enum,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -21,6 +22,7 @@ from boardtrace_api.db.base import Base, CreatedAtMixin, TimestampMixin, UUIDPri
 from boardtrace_api.models.enums import (
     AnalysisJobStatus,
     AnalysisJobType,
+    AnalysisOutboxStatus,
     AnalysisType,
     GameResult,
     GameStatus,
@@ -185,8 +187,18 @@ class EngineAnalysis(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
 
 class AnalysisJob(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "analysis_jobs"
-    __table_args__ = (CheckConstraint("attempts >= 0", name="attempts_non_negative"),)
+    __table_args__ = (
+        CheckConstraint("attempts >= 0", name="attempts_non_negative"),
+        CheckConstraint("attempt_count >= 0", name="attempt_count_non_negative"),
+        CheckConstraint("max_attempts > 0", name="max_attempts_positive"),
+        UniqueConstraint("game_id", "analysis_profile", "analysis_version"),
+        Index("ix_analysis_jobs_status_next_attempt_at", "status", "next_attempt_at"),
+        Index("ix_analysis_jobs_status_lease_expires_at", "status", "lease_expires_at"),
+    )
     game_id: Mapped[UUID] = mapped_column(ForeignKey("games.id", ondelete="CASCADE"), index=True)
+    owner_user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
     position_id: Mapped[UUID | None] = mapped_column(ForeignKey("positions.id", ondelete="CASCADE"))
     job_type: Mapped[AnalysisJobType] = mapped_column(
         enum_type(AnalysisJobType, "analysis_job_type")
@@ -195,11 +207,49 @@ class AnalysisJob(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         enum_type(AnalysisJobStatus, "analysis_job_status"), index=True
     )
     attempts: Mapped[int] = mapped_column(Integer, default=0)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    max_attempts: Mapped[int] = mapped_column(Integer, default=3, server_default="3")
+    analysis_profile: Mapped[str] = mapped_column(String(50), default="standard")
+    analysis_version: Mapped[int] = mapped_column(Integer, default=1)
     error_code: Mapped[str | None] = mapped_column(String(100))
     error_message: Mapped[str | None] = mapped_column(String(1000))
     queued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    lease_generation: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    last_error_code: Mapped[str | None] = mapped_column(String(100))
+    last_error_message: Mapped[str | None] = mapped_column(String(500))
+    worker_id: Mapped[str | None] = mapped_column(String(255))
+    queue_message_id: Mapped[str | None] = mapped_column(String(255), index=True)
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+
+
+class AnalysisJobOutbox(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "analysis_job_outbox"
+    __table_args__ = (
+        UniqueConstraint("analysis_job_id", "event_type", "payload_version", "delivery_generation"),
+        Index("ix_analysis_job_outbox_status_next_attempt_at", "status", "next_attempt_at"),
+    )
+    analysis_job_id: Mapped[UUID] = mapped_column(
+        ForeignKey("analysis_jobs.id", ondelete="CASCADE"), index=True
+    )
+    event_type: Mapped[str] = mapped_column(String(100))
+    payload_version: Mapped[int] = mapped_column(Integer, default=1)
+    delivery_generation: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    correlation_id: Mapped[UUID] = mapped_column(index=True)
+    status: Mapped[AnalysisOutboxStatus] = mapped_column(
+        enum_type(AnalysisOutboxStatus, "analysis_outbox_status"), index=True
+    )
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error_code: Mapped[str | None] = mapped_column(String(100))
 
 
 class ModelVersion(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
