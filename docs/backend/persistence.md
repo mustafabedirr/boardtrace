@@ -18,11 +18,50 @@ outbox records contain identifiers and bounded error codes only. They are delete
 existing game/user cascades; a time-based operations retention policy remains deployment work.
 
 Celery uses Redis only as a JSON broker on the explicit `boardtrace.analysis.jobs` queue.
-Messages contain only a schema version, job ID, and correlation ID. The Prompt 9 handler is a
-deterministic orchestration no-op: successful job execution does not set game analysis
-availability and creates no engine result.
+Messages contain only a schema version, job ID, and correlation ID.
 
 Prompt 10 adds an internal, typed `StockfishEngine` UCI adapter. It launches a configured
 native executable only from a backend worker call after server-side completion verification;
 imports and the FastAPI application never launch it. This foundation does not wire Stockfish
 into the queue handler, persist output, or add a public response schema.
+
+Prompt 10-C adds internal PostgreSQL tables for analysis runs, position evaluations, and
+move evaluations. A run is uniquely versioned by analysis-job ID and lease generation;
+run and child IDs are deterministic. The current `RUNNING` job row is locked and the exact
+worker ID plus lease generation must still own it before any result write is staged. Replays
+of the same generation transactionally replace that generation's children under the same
+identities, while a newer generation creates a distinct run.
+
+The service transaction commits the run, all position evaluations, and all move records
+together or rolls everything back. Deleting a game cascades through its analysis jobs and
+runs; deleting a run cascades to its position and move records. The bounded JSONB engine
+snapshot contains only allowlisted numeric configuration and reuse-policy fields. These
+tables have no API serializer, endpoint, queue integration, or client release path; persisted
+engine output remains server-internal regardless of game state until a later release phase.
+
+The Prompt 10-C-2 write boundary accepts only complete full-game results. Partial,
+cancelled, failed, timed-out, and budget-exhausted orchestration output is not persisted.
+Internal fresh-session read-back reconstructs the typed complete result for verification;
+it does not create a client-facing read path. PostgreSQL job-row locking serializes
+same-generation replacements, generation authority changes, and job terminal transitions.
+
+Prompt 10-C-3 minimizes the analysis-result payload further: raw FEN is absent from
+`analysis_position_evaluations`, the engine JSONB snapshot, deterministic identity inputs,
+internal durable read models, and persistence logging/audit context. The only durable FEN
+columns in the repository remain the older game/capture-domain fields `games.initial_fen`
+and `positions.fen`; they are not analysis-result storage and are unchanged by this phase.
+
+Prompt 10-E adds an internal-only authorized read path. Game ownership and non-live lifecycle
+are checked before analysis tables are queried. The highest current analysis version must resolve
+to an exact successful job generation and complete run; older results are never used as fallback.
+Read-back reconstructs frozen ordered records and fails closed on missing, mismatched, or corrupt
+durable state. This service is absent from FastAPI dependencies, routes, public schemas, and
+OpenAPI.
+
+Prompt 10-D connects the existing worker lifecycle to server-owned full-game replay,
+Stockfish, and complete-only result persistence. Engine execution occurs outside a database
+transaction under a game-time budget strictly shorter than the lease. Final result replacement
+and the generation-authorized `RUNNING -> SUCCEEDED` transition share one PostgreSQL transaction;
+either both commit or both roll back. Partial results remain non-durable, and existing retryable
+and terminal failure paths retain their owner/generation checks. Job success does not set
+`games.analysis_available_at` and adds no API or client release path.

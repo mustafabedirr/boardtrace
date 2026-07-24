@@ -5,18 +5,23 @@ import time.  Callers must pass post-game authorization explicitly before a nati
 Stockfish process can receive a position.
 """
 
+import logging
 from collections.abc import Callable, Mapping
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from datetime import datetime
+from threading import Lock
 from typing import Protocol
 from uuid import UUID
 
 import chess
 import chess.engine
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from boardtrace_api.config import Settings
 from boardtrace_api.models.enums import GameStatus
+
+logger = logging.getLogger("boardtrace_api.analysis.stockfish")
 
 
 class EngineExecutionForbidden(PermissionError):
@@ -29,6 +34,10 @@ class StockfishUnavailable(RuntimeError):
 
 class StockfishExecutionError(RuntimeError):
     """Raised when a started engine cannot provide a complete analysis response."""
+
+
+class StockfishAnalysisTimeout(StockfishExecutionError):
+    """Raised when Stockfish exceeds the bounded UCI command timeout."""
 
 
 class InvalidEnginePosition(ValueError):
@@ -58,9 +67,12 @@ class StockfishAnalysisRequest(BaseModel):
     position_id: UUID
     fen: str = Field(min_length=1, max_length=128)
     depth: int = Field(ge=1, le=99)
+    time_limit_ms: int | None = Field(default=None, ge=1, le=300_000)
 
 
 class StockfishScore(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
     centipawns: int | None = None
     mate_in: int | None = None
 
@@ -97,31 +109,41 @@ class UciEngine(Protocol):
     def quit(self) -> None: ...
 
 
-EngineLauncher = Callable[[str], UciEngine]
+EngineLauncher = Callable[[str, float], UciEngine]
 
 
-def _launch_stockfish(executable_path: str) -> UciEngine:
-    return chess.engine.SimpleEngine.popen_uci(executable_path)
+def _launch_stockfish(executable_path: str, timeout_seconds: float) -> UciEngine:
+    # popen_uci completes the UCI initialization handshake before returning.  The
+    # timeout also bounds subsequent protocol commands, including analyse().
+    return chess.engine.SimpleEngine.popen_uci(executable_path, timeout=timeout_seconds)
 
 
 class StockfishEngine:
-    """Owns one short-lived UCI process per analysis request in a worker process."""
+    """Owns bounded UCI sessions; standalone calls remain short-lived."""
 
     def __init__(
         self,
         executable_path: str | None,
         threads: int,
         hash_mb: int,
+        timeout_seconds: float = 30.0,
         launcher: EngineLauncher = _launch_stockfish,
     ) -> None:
         self._executable_path = executable_path
         self._threads = threads
         self._hash_mb = hash_mb
+        self._timeout_seconds = timeout_seconds
         self._launcher = launcher
+        self._execution_lock = Lock()
 
     @classmethod
     def from_settings(cls, settings: Settings) -> "StockfishEngine":
-        return cls(settings.stockfish_path, settings.stockfish_threads, settings.stockfish_hash_mb)
+        return cls(
+            settings.stockfish_path,
+            settings.stockfish_threads,
+            settings.stockfish_hash_mb,
+            settings.stockfish_timeout_seconds,
+        )
 
     def analyse(
         self,
@@ -131,16 +153,15 @@ class StockfishEngine:
         authorization.require_execution_allowed()
         if authorization.game_id != request.game_id:
             raise EngineExecutionForbidden("engine authorization does not match the requested game")
-        board = self._parse_board(request.fen)
-        engine = self._start_engine()
-        try:
-            engine.configure({"Threads": self._threads, "Hash": self._hash_mb})
-            info = engine.analyse(board, chess.engine.Limit(depth=request.depth))
-            return self._build_result(request, board, info, engine)
-        except chess.engine.EngineError as error:
-            raise StockfishExecutionError("Stockfish analysis failed") from error
-        finally:
-            engine.quit()
+        self._parse_board(request.fen)
+        with self.analysis_session(authorization) as session:
+            return session.analyse(request)
+
+    def analysis_session(
+        self, authorization: PostGameEngineAuthorization
+    ) -> AbstractContextManager["StockfishAnalysisSession"]:
+        """Create one serialized process owner for one bounded analysis operation."""
+        return StockfishAnalysisSession(self, authorization)
 
     @staticmethod
     def _parse_board(fen: str) -> chess.Board:
@@ -153,9 +174,24 @@ class StockfishEngine:
         if not self._executable_path:
             raise StockfishUnavailable("Stockfish executable is not configured")
         try:
-            return self._launcher(self._executable_path)
+            return self._launcher(self._executable_path, self._timeout_seconds)
+        except TimeoutError as error:
+            raise StockfishUnavailable("Stockfish UCI startup timed out") from error
         except (FileNotFoundError, OSError, chess.engine.EngineError) as error:
             raise StockfishUnavailable("Stockfish executable is unavailable") from error
+
+    @staticmethod
+    def _stop_engine(engine: UciEngine) -> None:
+        """Best-effort invalidation without masking analysis errors or cancellation."""
+        try:
+            engine.quit()
+        except (TimeoutError, OSError, chess.engine.EngineError) as error:
+            # A timed-out or crashed process is already unusable.  SimpleEngine's
+            # transport teardown invalidates it; the next request always starts fresh.
+            logger.warning(
+                "stockfish_process_cleanup_failed",
+                extra={"error_type": type(error).__name__},
+            )
 
     @staticmethod
     def _build_result(
@@ -204,3 +240,81 @@ def _time_ms(value: object) -> int | None:
     if isinstance(value, (int, float)) and value >= 0:
         return round(value * 1000)
     return None
+
+
+class StockfishAnalysisSession:
+    """One configured Stockfish subprocess shared by sequential position calls."""
+
+    def __init__(
+        self,
+        owner: StockfishEngine,
+        authorization: PostGameEngineAuthorization,
+    ) -> None:
+        self._owner = owner
+        self._authorization = authorization
+        self._engine: UciEngine | None = None
+
+    def __enter__(self) -> "StockfishAnalysisSession":
+        self._authorization.require_execution_allowed()
+        self._owner._execution_lock.acquire()
+        engine: UciEngine | None = None
+        try:
+            engine = self._owner._start_engine()
+            engine.configure({"Threads": self._owner._threads, "Hash": self._owner._hash_mb})
+            self._engine = engine
+            return self
+        except BaseException as error:
+            if engine is not None:
+                self._owner._stop_engine(engine)
+            self._owner._execution_lock.release()
+            if isinstance(error, TimeoutError):
+                raise StockfishAnalysisTimeout("Stockfish configuration timed out") from error
+            if isinstance(error, chess.engine.EngineError):
+                raise StockfishExecutionError("Stockfish configuration failed") from error
+            raise
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: object,
+    ) -> None:
+        engine = self._engine
+        self._engine = None
+        try:
+            if engine is not None:
+                self._owner._stop_engine(engine)
+        finally:
+            self._owner._execution_lock.release()
+
+    def analyse(self, request: StockfishAnalysisRequest) -> StockfishAnalysisResult:
+        engine = self._engine
+        if engine is None:
+            raise StockfishExecutionError("Stockfish analysis session is not active")
+        if self._authorization.game_id != request.game_id:
+            raise EngineExecutionForbidden("engine authorization does not match the requested game")
+        board = self._owner._parse_board(request.fen)
+        try:
+            info = engine.analyse(
+                board,
+                chess.engine.Limit(
+                    depth=request.depth,
+                    time=request.time_limit_ms / 1000
+                    if request.time_limit_ms is not None
+                    else None,
+                ),
+            )
+            return self._owner._build_result(request, board, info, engine)
+        except TimeoutError as error:
+            self._invalidate(engine)
+            raise StockfishAnalysisTimeout("Stockfish analysis timed out") from error
+        except chess.engine.EngineError as error:
+            self._invalidate(engine)
+            raise StockfishExecutionError("Stockfish analysis failed") from error
+        except StockfishExecutionError:
+            self._invalidate(engine)
+            raise
+
+    def _invalidate(self, engine: UciEngine) -> None:
+        self._engine = None
+        self._owner._stop_engine(engine)

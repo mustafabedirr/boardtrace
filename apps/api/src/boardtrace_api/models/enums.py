@@ -57,3 +57,8 @@ class AnalysisJobStatus(StrEnum):
 class AnalysisOutboxStatus(StrEnum):
     PENDING = "PENDING"
     PUBLISHED = "PUBLISHED"
+
+
+class AnalysisRunStatus(StrEnum):
+    COMPLETE = "COMPLETE"
+    PARTIAL = "PARTIAL"

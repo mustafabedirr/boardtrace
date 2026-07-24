@@ -1,11 +1,13 @@
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
+from typing import cast
 from uuid import UUID, uuid4
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from boardtrace_api.db.transactions import TransactionBoundary
+from boardtrace_api.db.transactions import BeforeCommitHook, TransactionBoundary
 from boardtrace_api.ingestion_observability import (
     IngestionTerminalObserver,
     IngestionTerminalOutcome,
@@ -20,6 +22,12 @@ class RecordCollector(logging.Handler):
 
     def emit(self, record: logging.LogRecord) -> None:
         self.records.append(record)
+
+
+class ObserverFailureLogRecord(logging.LogRecord):
+    outcome: str
+    operation: str
+    observer_error_type: str
 
 
 class SessionSpy:
@@ -89,8 +97,11 @@ async def execute_attempt(
     operation_callable: Callable[[], Awaitable[UUID]],
     hook: Callable[[], Awaitable[None]] | None = None,
 ) -> UUID:
+    typed_session = cast(AsyncSession, session)
     boundary = (
-        TransactionBoundary(session, hook) if hook is not None else TransactionBoundary(session)
+        TransactionBoundary(typed_session, cast(BeforeCommitHook, hook))
+        if hook is not None
+        else TransactionBoundary(typed_session)
     )
     return await execute_ingestion_attempt(
         execute=lambda: boundary.execute(operation_callable),
@@ -197,7 +208,7 @@ async def test_observer_failure_after_commit_preserves_result_and_logs_diagnosti
     assert result == game_id
     assert sequence == ["operation", "commit", "terminal_success"]
     assert observer.calls == 1
-    record = handler.records[-1]
+    record = cast(ObserverFailureLogRecord, handler.records[-1])
     assert record.getMessage() == "ingestion_terminal_observer_recording_failed"
     assert record.outcome == "success"
     assert record.operation == "completed_game_ingestion"
@@ -237,7 +248,8 @@ async def test_observer_failure_during_business_failure_preserves_original_error
     assert raised.value is error
     assert sequence == ["operation", "rollback", "terminal_failure"]
     assert observer.calls == 1
-    assert handler.records[-1].observer_error_type == "RuntimeError"
+    record = cast(ObserverFailureLogRecord, handler.records[-1])
+    assert record.observer_error_type == "RuntimeError"
 
 
 @pytest.mark.asyncio

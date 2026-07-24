@@ -1,6 +1,9 @@
 from boardtrace_api.models.models import (
     AnalysisJob,
     AnalysisJobOutbox,
+    AnalysisMoveEvaluation,
+    AnalysisPositionEvaluation,
+    AnalysisRun,
     AuthSession,
     DetectedMove,
     EngineAnalysis,
@@ -16,6 +19,9 @@ from boardtrace_api.models.models import (
 __all__ = [
     "AnalysisJob",
     "AnalysisJobOutbox",
+    "AnalysisMoveEvaluation",
+    "AnalysisPositionEvaluation",
+    "AnalysisRun",
     "AuthSession",
     "DetectedMove",
     "EngineAnalysis",

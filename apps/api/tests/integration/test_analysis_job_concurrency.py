@@ -262,7 +262,7 @@ async def test_worker_retryable_exception_schedules_durable_retry(
         raise ConnectionError("test failure")
 
     monkeypatch.setattr(worker_module, "_wait_for_test_gate", raise_retryable_error)
-    result = await worker_module._run_noop(
+    result = await worker_module._run_analysis(
         AnalysisTaskPayload(schema_version=1, job_id=job.id, correlation_id=uuid4()), "worker-a"
     )
     assert result == "retry_scheduled"
@@ -782,7 +782,7 @@ async def test_active_lease_duplicate_delivery_emits_only_duplicate_observabilit
     monkeypatch.setattr(worker_module, "metrics", metrics)
 
     with caplog.at_level(logging.INFO, logger="boardtrace_api.analysis"):
-        result = await worker_module._run_noop(
+        result = await worker_module._run_analysis(
             AnalysisTaskPayload(schema_version=1, job_id=job.id, correlation_id=uuid4()), "worker-b"
         )
 

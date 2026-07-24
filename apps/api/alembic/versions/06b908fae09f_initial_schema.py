@@ -8,6 +8,7 @@ Create Date: 2026-07-12 22:24:17.781442
 
 from collections.abc import Sequence
 
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.engine import Connection
 
 from alembic import op
@@ -30,6 +31,10 @@ def upgrade() -> None:
     """
     bind = op.get_bind()
     Game.metadata.create_all(bind=bind)
+    op.drop_table("analysis_move_evaluations")
+    op.drop_table("analysis_position_evaluations")
+    op.drop_table("analysis_runs")
+    postgresql.ENUM(name="analysis_run_status").drop(bind, checkfirst=True)
     op.drop_table("extension_pairings")
     op.drop_table("auth_sessions")
     for column in (

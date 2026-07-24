@@ -14,6 +14,15 @@ calls it with server-derived, post-game authorization. Importing the module and 
 the FastAPI application do not launch a process. Its result types are internal domain
 objects; no endpoint, response schema, persistence path, or worker task is added here.
 
+Each bounded adapter session owns a fresh native process. A standalone position call is
+a one-call session; full-game orchestration may send its N+1 sequential position calls
+through one session. `popen_uci` must complete the UCI startup handshake before the
+process is considered ready, and the configured command timeout bounds startup and
+protocol operations. Sessions sharing an adapter instance are serialized. Timeout,
+crash, engine error, and caller cancellation all invalidate and clean up that session's
+process; a later session starts a new process rather than reusing uncertain protocol
+state.
+
 `python-chess` is maintained, has no service cost, and supplies the approved UCI boundary
 without implementing a custom subprocess protocol. The standard library alone is not a
 safe replacement because correct UCI lifecycle, parsing, and shutdown handling would be
@@ -21,7 +30,10 @@ application-owned.
 
 ## Consequences
 
-Only `FINISHED` or `DEEP_ANALYSIS_RUNNING` games with `completion_verified_at` may reach
-the adapter. Active, unverified, failed, and mismatched game requests fail before a native
-process is started. A later worker integration must preserve this gate and must not expose
-the internal result types before the server releases analysis.
+The domain contract has two distinct gates. Job creation accepts only a server-verified
+`FINISHED` game. Engine execution accepts a server-verified `FINISHED` game and also
+`DEEP_ANALYSIS_RUNNING`, the state occupied while authorized engine work is executing.
+`ANALYSIS_AVAILABLE` is the client release state, not permission to start more engine
+work. Active, unverified, failed, released, and mismatched requests fail before a native
+process is started. A later worker integration must preserve these gates and must not
+expose the internal result types before the server releases analysis.

@@ -23,6 +23,7 @@ from boardtrace_api.models.enums import (
     AnalysisJobStatus,
     AnalysisJobType,
     AnalysisOutboxStatus,
+    AnalysisRunStatus,
     AnalysisType,
     GameResult,
     GameStatus,
@@ -250,6 +251,84 @@ class AnalysisJobOutbox(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_error_code: Mapped[str | None] = mapped_column(String(100))
+
+
+class AnalysisRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "analysis_runs"
+    __table_args__ = (
+        UniqueConstraint("analysis_job_id", "lease_generation"),
+        CheckConstraint("lease_generation > 0", name="lease_generation_positive"),
+        CheckConstraint("analysis_version > 0", name="analysis_version_positive"),
+        CheckConstraint("total_positions >= 0", name="total_positions_non_negative"),
+        CheckConstraint("evaluated_positions >= 0", name="evaluated_positions_non_negative"),
+        CheckConstraint("total_moves >= 0", name="total_moves_non_negative"),
+        CheckConstraint("completed_moves >= 0", name="completed_moves_non_negative"),
+    )
+    analysis_job_id: Mapped[UUID] = mapped_column(
+        ForeignKey("analysis_jobs.id", ondelete="CASCADE"), index=True
+    )
+    game_id: Mapped[UUID] = mapped_column(ForeignKey("games.id", ondelete="CASCADE"), index=True)
+    lease_generation: Mapped[int] = mapped_column(Integer)
+    analysis_version: Mapped[int] = mapped_column(Integer)
+    status: Mapped[AnalysisRunStatus] = mapped_column(
+        enum_type(AnalysisRunStatus, "analysis_run_status"), index=True
+    )
+    engine_name: Mapped[str | None] = mapped_column(String(100))
+    engine_version: Mapped[str | None] = mapped_column(String(100))
+    configuration_snapshot: Mapped[dict[str, object]] = mapped_column(JSONB, default=dict)
+    total_positions: Mapped[int] = mapped_column(Integer)
+    evaluated_positions: Mapped[int] = mapped_column(Integer)
+    total_moves: Mapped[int] = mapped_column(Integer)
+    completed_moves: Mapped[int] = mapped_column(Integer)
+    failure_code: Mapped[str | None] = mapped_column(String(100))
+    failure_error_type: Mapped[str | None] = mapped_column(String(100))
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class AnalysisPositionEvaluation(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
+    __tablename__ = "analysis_position_evaluations"
+    __table_args__ = (
+        UniqueConstraint("analysis_run_id", "ply"),
+        CheckConstraint("ply >= 0", name="ply_non_negative"),
+        CheckConstraint(
+            "(centipawns IS NULL) <> (mate_in IS NULL)",
+            name="exactly_one_score",
+        ),
+    )
+    analysis_run_id: Mapped[UUID] = mapped_column(
+        ForeignKey("analysis_runs.id", ondelete="CASCADE"), index=True
+    )
+    source_position_id: Mapped[UUID] = mapped_column(index=True)
+    ply: Mapped[int] = mapped_column(Integer)
+    side_to_move: Mapped[Literal["w", "b"]] = mapped_column(String(1))
+    centipawns: Mapped[int | None] = mapped_column(Integer)
+    mate_in: Mapped[int | None] = mapped_column(Integer)
+    best_move_uci: Mapped[str] = mapped_column(String(5))
+    principal_variation_uci: Mapped[list[str]] = mapped_column(JSONB)
+    depth: Mapped[int | None] = mapped_column(Integer)
+    nodes: Mapped[int | None] = mapped_column(Integer)
+    time_ms: Mapped[int | None] = mapped_column(Integer)
+
+
+class AnalysisMoveEvaluation(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
+    __tablename__ = "analysis_move_evaluations"
+    __table_args__ = (
+        UniqueConstraint("analysis_run_id", "ply"),
+        CheckConstraint("ply > 0", name="ply_positive"),
+    )
+    analysis_run_id: Mapped[UUID] = mapped_column(
+        ForeignKey("analysis_runs.id", ondelete="CASCADE"), index=True
+    )
+    ply: Mapped[int] = mapped_column(Integer)
+    move_uci: Mapped[str] = mapped_column(String(5))
+    move_san: Mapped[str] = mapped_column(String(20))
+    before_position_evaluation_id: Mapped[UUID] = mapped_column(
+        ForeignKey("analysis_position_evaluations.id", ondelete="CASCADE"), index=True
+    )
+    after_position_evaluation_id: Mapped[UUID] = mapped_column(
+        ForeignKey("analysis_position_evaluations.id", ondelete="CASCADE"), index=True
+    )
 
 
 class ModelVersion(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):

@@ -1,4 +1,5 @@
 import logging
+from typing import cast
 from uuid import uuid4
 
 import pytest
@@ -18,6 +19,13 @@ class RecordCollector(logging.Handler):
 
     def emit(self, record: logging.LogRecord) -> None:
         self.records.append(record)
+
+
+class IngestionLogRecord(logging.LogRecord):
+    operation: str
+    outcome: str
+    game_id: str
+    error_type: str | None
 
 
 def test_terminal_outcomes_have_stable_serialized_values() -> None:
@@ -72,7 +80,7 @@ async def test_logging_observer_uses_stable_event_and_structured_fields() -> Non
         logger.disabled = previous_disabled
         logging.disable(previous_disable)
 
-    record = handler.records[-1]
+    record = cast(IngestionLogRecord, handler.records[-1])
     assert record.getMessage() == "ingestion_terminal_outcome"
     assert record.operation == "completed_game_ingestion"
     assert record.outcome == "failure"
@@ -111,7 +119,7 @@ async def test_logging_observer_records_success_without_failure_or_payload_field
         logger.disabled = previous_disabled
         logging.disable(previous_disable)
 
-    record = handler.records[-1]
+    record = cast(IngestionLogRecord, handler.records[-1])
     assert record.getMessage() == "ingestion_terminal_outcome"
     assert record.operation == "completed_game_ingestion"
     assert record.outcome == "success"

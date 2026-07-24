@@ -50,6 +50,12 @@ class Settings(BaseSettings):
     stockfish_path: str | None = None
     stockfish_threads: int = Field(default=1, ge=1, le=128)
     stockfish_hash_mb: int = Field(default=64, ge=1, le=65_536)
+    stockfish_timeout_seconds: float = Field(default=30.0, gt=0, le=300)
+    analysis_depth: int = Field(default=12, ge=1, le=99)
+    analysis_max_position_time_ms: int = Field(default=500, ge=1, le=300_000)
+    analysis_max_game_time_ms: int = Field(default=60_000, ge=1, le=7_200_000)
+    analysis_max_moves: int = Field(default=300, ge=1, le=600)
+    analysis_max_positions: int = Field(default=301, ge=2, le=601)
     jwt_signing_secret: str | None = Field(default=None, repr=False)
     jwt_algorithm: str = "HS256"
     jwt_issuer: str = "boardtrace-api"
@@ -73,4 +79,8 @@ class Settings(BaseSettings):
             raise ValueError("Analysis soft time limit must be shorter than the hard time limit")
         if self.analysis_retry_max_delay_seconds < self.analysis_retry_base_delay_seconds:
             raise ValueError("Analysis retry maximum delay must not be below its base delay")
+        if self.analysis_max_positions < self.analysis_max_moves + 1:
+            raise ValueError("Analysis position budget must include every move plus the start")
+        if self.analysis_max_game_time_ms >= self.analysis_lease_seconds * 1000:
+            raise ValueError("Analysis game budget must be shorter than the worker lease")
         return self
