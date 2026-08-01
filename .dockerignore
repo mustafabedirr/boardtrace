@@ -1,0 +1,14 @@
+.git
+.agents
+.codex
+.tmp
+.venv
+node_modules
+coverage
+htmlcov
+apps/extension/build
+apps/web/.next
+__pycache__
+.pytest_cache
+.mypy_cache
+.ruff_cache

@@ -1,0 +1,10 @@
+{
+  "Rules": [
+    {
+      "ID": "expire-boardtrace-pilot-backups-after-30-days",
+      "Status": "Enabled",
+      "Filter": { "Prefix": "" },
+      "Expiration": { "Days": 30 }
+    }
+  ]
+}

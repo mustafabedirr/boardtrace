@@ -58,6 +58,7 @@ docker-compose.local.yml
 *.log
 logs/
 tmp/
+.tmp/
 temp/
 .capture/
 captures/

@@ -49,6 +49,7 @@ warn_unused_configs = true
 [tool.pytest.ini_options]
 testpaths = ["tests/python"]
 python_files = ["test_*.py"]
+pythonpath = ["."]
 addopts = "-ra --strict-markers --strict-config"
 asyncio_mode = "strict"
 markers = [

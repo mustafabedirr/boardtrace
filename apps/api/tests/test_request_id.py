@@ -33,7 +33,9 @@ async def test_valid_client_request_id_is_preserved_on_success_and_error() -> No
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("invalid_request_id", ["", "x" * 129, "invalid\nvalue"])
+@pytest.mark.parametrize(
+    "invalid_request_id", ["", "x" * 129, "invalid\nvalue", "e2e4", "moves=e2e4"]
+)
 async def test_invalid_client_request_id_is_replaced(invalid_request_id: str) -> None:
     transport = httpx.ASGITransport(app=create_app(Settings()))
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:

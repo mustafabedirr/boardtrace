@@ -57,7 +57,12 @@ class AnalysisJobRepository:
         )
 
     async def create_if_absent(
-        self, game_id: UUID, owner_user_id: UUID, correlation_id: UUID
+        self,
+        game_id: UUID,
+        owner_user_id: UUID,
+        correlation_id: UUID,
+        *,
+        enqueue: bool = True,
     ) -> AnalysisJob:
         existing = await self.get_by_game_profile_version(game_id, "standard", 1)
         if existing is not None:
@@ -74,9 +79,10 @@ class AnalysisJobRepository:
                 status=AnalysisJobStatus.PENDING,
                 attempts=0,
                 attempt_count=0,
-                max_attempts=3,
+                max_attempts=1,
                 analysis_profile="standard",
                 analysis_version=1,
+                admission_correlation_id=correlation_id,
             )
             .on_conflict_do_nothing(
                 index_elements=["game_id", "analysis_profile", "analysis_version"]
@@ -94,6 +100,14 @@ class AnalysisJobRepository:
                 )
             ),
         )
+        if enqueue:
+            await self.ensure_outbox(job_id, correlation_id)
+        job = await self.get_by_id(job_id)
+        if job is None:
+            raise RuntimeError("analysis job insert did not return a persistent row")
+        return job
+
+    async def ensure_outbox(self, job_id: UUID, correlation_id: UUID) -> None:
         await self._session.execute(
             insert(AnalysisJobOutbox)
             .values(
@@ -115,10 +129,6 @@ class AnalysisJobRepository:
                 ]
             )
         )
-        job = await self.get_by_id(job_id)
-        if job is None:
-            raise RuntimeError("analysis job insert did not return a persistent row")
-        return job
 
     async def list_publishable_outbox(self, now: datetime, limit: int) -> list[AnalysisJobOutbox]:
         rows = await self._session.scalars(
@@ -309,6 +319,31 @@ class AnalysisJobRepository:
         job.heartbeat_at = None
         return True
 
+    async def terminalize_job(
+        self,
+        job_id: UUID,
+        target: AnalysisJobStatus,
+        code: str,
+        message: str,
+        now: datetime,
+    ) -> bool:
+        if target not in {AnalysisJobStatus.FAILED, AnalysisJobStatus.CANCELLED}:
+            raise ValueError("unsupported terminal target")
+        job = await self.get_by_id(job_id, lock=True)
+        if job is None or job.status in TERMINAL_STATUSES:
+            return False
+        validate_transition(job.status, target)
+        job.status = target
+        job.finished_at = now
+        job.last_error_code = code[:100]
+        job.last_error_message = message[:500]
+        job.worker_id = None
+        job.lease_expires_at = None
+        job.heartbeat_at = None
+        if target is AnalysisJobStatus.FAILED:
+            job.failed_at = now
+        return True
+
     async def recover_expired_lease(
         self,
         job_id: UUID,
@@ -347,6 +382,19 @@ class AnalysisJobRepository:
 
     async def get_safe_status(self, job_id: UUID, owner_user_id: UUID) -> AnalysisJob | None:
         return await self.get_owned_by_id(job_id, owner_user_id)
+
+    async def list_expired_active_jobs(self, now: datetime, limit: int = 100) -> list[UUID]:
+        rows = await self._session.scalars(
+            select(AnalysisJob.id)
+            .where(
+                AnalysisJob.status.in_((AnalysisJobStatus.CLAIMED, AnalysisJobStatus.RUNNING)),
+                AnalysisJob.lease_expires_at.is_not(None),
+                AnalysisJob.lease_expires_at <= now,
+            )
+            .order_by(AnalysisJob.lease_expires_at)
+            .limit(limit)
+        )
+        return list(rows)
 
     async def observability_snapshot(self) -> tuple[int, int]:
         """Return authoritative gauges from PostgreSQL, never process-local counters."""

@@ -8,7 +8,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from boardtrace_api.analysis.observability import (
     AnalysisMetrics,
     NoOpAnalysisMetrics,
-    audit_event,
     audit_event_safely,
     metric_gauge,
     metric_increment,
@@ -22,9 +21,14 @@ from boardtrace_api.db.transactions import (
     no_op_before_commit,
 )
 from boardtrace_api.models import AnalysisJob
-from boardtrace_api.models.enums import GameStatus
+from boardtrace_api.models.enums import AnalysisJobStatus, GameStatus
 from boardtrace_api.repositories.analysis_jobs import AnalysisJobRepository
 from boardtrace_api.repositories.games import GameRepository
+from boardtrace_api.services.analysis_cleanup import (
+    GameDataCleanup,
+    TerminalGameDataCleanup,
+    record_cleanup,
+)
 
 
 class AnalysisJobEligibilityError(ValueError):
@@ -49,7 +53,9 @@ class AnalysisJobService:
         self._jobs = AnalysisJobRepository(session)
         self._metrics = metrics or NoOpAnalysisMetrics()
 
-    async def create_for_completed_game(self, game_id: UUID, correlation_id: UUID) -> AnalysisJob:
+    async def create_for_completed_game(
+        self, game_id: UUID, correlation_id: UUID, *, enqueue: bool = True
+    ) -> AnalysisJob:
         game = await GameRepository(self._session).get_by_id(game_id)
         if (
             game is None
@@ -60,22 +66,26 @@ class AnalysisJobService:
             or game.analysis_available_at is not None
         ):
             raise AnalysisJobEligibilityError("game is not eligible for post-game analysis")
-        job = await self._jobs.create_if_absent(game.id, game.user_id, correlation_id)
-        audit_event(
+        job = await self._jobs.create_if_absent(
+            game.id, game.user_id, correlation_id, enqueue=enqueue
+        )
+        audit_event_safely(
             "analysis_job_created",
             job_id=str(job.id),
             correlation_id=str(correlation_id),
             status=job.status.value,
             attempt_count=job.attempt_count,
         )
-        audit_event(
-            "analysis_job_enqueue_requested",
-            job_id=str(job.id),
-            correlation_id=str(correlation_id),
-            delivery_generation=0,
-        )
+        if enqueue:
+            audit_event_safely(
+                "analysis_job_enqueue_requested",
+                job_id=str(job.id),
+                correlation_id=str(correlation_id),
+                delivery_generation=0,
+            )
         metric_increment(self._metrics, "analysis_jobs_created_total", status=job.status.value)
-        metric_increment(self._metrics, "analysis_jobs_enqueue_requested_total")
+        if enqueue:
+            metric_increment(self._metrics, "analysis_jobs_enqueue_requested_total")
         return job
 
 
@@ -87,10 +97,12 @@ class AnalysisJobTerminalFailureService:
         session: AsyncSession,
         metrics: AnalysisMetrics | None = None,
         repository: TerminalFailureRepository | None = None,
+        cleanup: GameDataCleanup | None = None,
     ) -> None:
         self._session = session
         self._metrics = metrics or NoOpAnalysisMetrics()
         self._jobs = repository or AnalysisJobRepository(session)
+        self._cleanup = cleanup or TerminalGameDataCleanup(session)
 
     async def fail_job(
         self,
@@ -102,10 +114,20 @@ class AnalysisJobTerminalFailureService:
         lease_generation: int | None = None,
         before_commit: BeforeCommitHook = no_op_before_commit,
     ) -> bool:
-        accepted = await TransactionBoundary(self._session, before_commit).execute(
-            lambda: self._jobs.fail_job(job_id, worker_id, code, message, now, lease_generation)
-        )
+        cleaned = False
+
+        async def fail_and_cleanup() -> bool:
+            nonlocal cleaned
+            accepted = await self._jobs.fail_job(
+                job_id, worker_id, code, message, now, lease_generation
+            )
+            if accepted:
+                cleaned = await self._cleanup.delete_for_job(job_id)
+            return accepted
+
+        accepted = await TransactionBoundary(self._session, before_commit).execute(fail_and_cleanup)
         if accepted:
+            record_cleanup(job_id, "deleted" if cleaned else "already_absent")
             audit_event_safely(
                 "analysis_job_failed",
                 job_id=str(job_id),
@@ -130,6 +152,61 @@ class AnalysisJobTerminalFailureService:
                 self._metrics,
                 "analysis_job_invalid_transitions_total",
                 error_code="terminal_failure_rejected",
+            )
+        return accepted
+
+
+class AnalysisJobTerminalService:
+    """One cleanup transaction for non-owner worker loss, expiry and cancellation."""
+
+    def __init__(
+        self,
+        session: AsyncSession,
+        metrics: AnalysisMetrics | None = None,
+        cleanup: GameDataCleanup | None = None,
+    ) -> None:
+        self._session = session
+        self._metrics = metrics or NoOpAnalysisMetrics()
+        self._jobs = AnalysisJobRepository(session)
+        self._cleanup = cleanup or TerminalGameDataCleanup(session)
+
+    async def terminalize(
+        self,
+        job_id: UUID,
+        target: AnalysisJobStatus,
+        code: str,
+        message: str,
+        now: datetime,
+        before_commit: BeforeCommitHook = no_op_before_commit,
+    ) -> bool:
+        cleaned = False
+
+        async def mutate_and_cleanup() -> bool:
+            nonlocal cleaned
+            accepted = await self._jobs.terminalize_job(job_id, target, code, message, now)
+            if accepted:
+                cleaned = await self._cleanup.delete_for_job(job_id)
+            return accepted
+
+        accepted = await TransactionBoundary(self._session, before_commit).execute(
+            mutate_and_cleanup
+        )
+        if accepted:
+            record_cleanup(job_id, "deleted" if cleaned else "already_absent")
+            audit_event_safely(
+                "analysis_job_terminalized",
+                job_id=str(job_id),
+                status=target.value,
+                error_code=code,
+                cleanup_result="deleted" if cleaned else "already_absent",
+            )
+            metric_increment(
+                self._metrics,
+                "analysis_jobs_cancelled_total"
+                if target is AnalysisJobStatus.CANCELLED
+                else "analysis_jobs_failed_total",
+                status=target.value,
+                error_code=code[:100],
             )
         return accepted
 
@@ -160,7 +237,7 @@ class OutboxPublisher:
                     now
                     + self._retry_policy.delay_for_attempt(event.attempt_count + 1, self._jitter),
                 )
-                audit_event(
+                audit_event_safely(
                     "analysis_job_publish_failed",
                     job_id=str(event.analysis_job_id),
                     correlation_id=str(event.correlation_id),
@@ -173,7 +250,7 @@ class OutboxPublisher:
                 )
             else:
                 await self._jobs.mark_outbox_published(event, message_id, now)
-                audit_event(
+                audit_event_safely(
                     "analysis_job_published",
                     job_id=str(event.analysis_job_id),
                     correlation_id=str(event.correlation_id),

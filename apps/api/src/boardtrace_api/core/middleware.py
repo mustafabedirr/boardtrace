@@ -8,7 +8,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 
-from boardtrace_api.logging import request_id_context
+from boardtrace_api.logging import contains_unsafe_diagnostic_content, request_id_context
 
 _SAFE_REQUEST_ID = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 
@@ -18,7 +18,11 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
         self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
         value = request.headers.get(request.app.state.settings.request_id_header, "")
-        request_id = value if _SAFE_REQUEST_ID.fullmatch(value) else str(uuid.uuid4())
+        request_id = (
+            value
+            if _SAFE_REQUEST_ID.fullmatch(value) and not contains_unsafe_diagnostic_content(value)
+            else str(uuid.uuid4())
+        )
         request.state.request_id = request_id
         token = request_id_context.set(request_id)
         started = time.perf_counter()

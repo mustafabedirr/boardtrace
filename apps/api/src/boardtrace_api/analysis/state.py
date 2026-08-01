@@ -4,7 +4,9 @@ TERMINAL_STATUSES = frozenset(
     {AnalysisJobStatus.SUCCEEDED, AnalysisJobStatus.FAILED, AnalysisJobStatus.CANCELLED}
 )
 ALLOWED_TRANSITIONS: dict[AnalysisJobStatus, frozenset[AnalysisJobStatus]] = {
-    AnalysisJobStatus.PENDING: frozenset({AnalysisJobStatus.QUEUED, AnalysisJobStatus.CANCELLED}),
+    AnalysisJobStatus.PENDING: frozenset(
+        {AnalysisJobStatus.QUEUED, AnalysisJobStatus.FAILED, AnalysisJobStatus.CANCELLED}
+    ),
     AnalysisJobStatus.QUEUED: frozenset(
         {AnalysisJobStatus.CLAIMED, AnalysisJobStatus.FAILED, AnalysisJobStatus.CANCELLED}
     ),
@@ -15,7 +17,7 @@ ALLOWED_TRANSITIONS: dict[AnalysisJobStatus, frozenset[AnalysisJobStatus]] = {
         {AnalysisJobStatus.SUCCEEDED, AnalysisJobStatus.FAILED, AnalysisJobStatus.RETRY_SCHEDULED}
     ),
     AnalysisJobStatus.RETRY_SCHEDULED: frozenset(
-        {AnalysisJobStatus.QUEUED, AnalysisJobStatus.CANCELLED}
+        {AnalysisJobStatus.QUEUED, AnalysisJobStatus.FAILED, AnalysisJobStatus.CANCELLED}
     ),
     AnalysisJobStatus.SUCCEEDED: frozenset(),
     AnalysisJobStatus.FAILED: frozenset(),

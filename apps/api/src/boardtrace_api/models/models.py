@@ -228,6 +228,7 @@ class AnalysisJob(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     last_error_message: Mapped[str | None] = mapped_column(String(500))
     worker_id: Mapped[str | None] = mapped_column(String(255))
     queue_message_id: Mapped[str | None] = mapped_column(String(255), index=True)
+    admission_correlation_id: Mapped[UUID] = mapped_column(index=True)
     version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
 
 

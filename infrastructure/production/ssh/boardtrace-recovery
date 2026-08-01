@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+readonly APP_DIR=/opt/boardtrace
+readonly COMPOSE_FILE="$APP_DIR/compose.production.yml"
+readonly PREVIOUS_ENV="$APP_DIR/previous-known-good.env"
+
+case "${1:-}" in
+  status)
+    exec docker compose --file "$COMPOSE_FILE" ps
+    ;;
+  stop)
+    exec docker compose --file "$COMPOSE_FILE" stop api worker web
+    ;;
+  restart)
+    exec docker compose --file "$COMPOSE_FILE" restart api worker web
+    ;;
+  rollback)
+    test -r "$PREVIOUS_ENV"
+    exec docker compose --env-file "$PREVIOUS_ENV" --file "$COMPOSE_FILE" up --detach --no-build api worker web
+    ;;
+  health)
+    exec curl --fail --silent --show-error --max-time 10 http://127.0.0.1:8000/health
+    ;;
+  *)
+    echo "allowed actions: status, stop, restart, rollback, health" >&2
+    exit 64
+    ;;
+esac

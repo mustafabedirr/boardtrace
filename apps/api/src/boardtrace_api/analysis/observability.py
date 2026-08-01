@@ -2,6 +2,8 @@ import logging
 from collections import Counter
 from typing import Protocol
 
+from boardtrace_api.logging import DiagnosticMetadata
+
 ANALYSIS_COUNTERS = frozenset(
     {
         "analysis_jobs_created_total",
@@ -13,6 +15,7 @@ ANALYSIS_COUNTERS = frozenset(
         "analysis_jobs_heartbeat_total",
         "analysis_jobs_succeeded_total",
         "analysis_jobs_failed_total",
+        "analysis_jobs_cancelled_total",
         "analysis_jobs_retried_total",
         "analysis_job_lease_recoveries_total",
         "analysis_job_duplicate_deliveries_total",
@@ -39,6 +42,7 @@ ANALYSIS_AUDIT_EVENTS = frozenset(
         "analysis_job_started",
         "analysis_job_heartbeat",
         "analysis_job_succeeded",
+        "analysis_availability_transitioned",
         "analysis_job_retry_scheduled",
         "analysis_job_failed",
         "analysis_job_lease_recovered",
@@ -46,18 +50,12 @@ ANALYSIS_AUDIT_EVENTS = frozenset(
         "analysis_job_invalid_transition_rejected",
         "analysis_job_payload_rejected",
         "analysis_job_max_attempts_exhausted",
+        "analysis_job_terminalized",
+        "analysis_queue_transition",
+        "analysis_terminal_game_data_cleanup",
     }
 )
-_AUDIT_CONTEXT_LIMITS = {
-    "job_id": 64,
-    "correlation_id": 64,
-    "status": 64,
-    "attempt_count": 16,
-    "delivery_generation": 16,
-    "worker_id": 255,
-    "error_code": 100,
-    "duration_seconds": 32,
-}
+_AUDIT_CONTEXT_FIELDS = frozenset(DiagnosticMetadata.model_fields)
 
 
 class AnalysisMetrics(Protocol):
@@ -143,12 +141,9 @@ def audit_event(event: str, **context: object) -> None:
     """Emit a bounded, secret-free lifecycle event from production code only."""
     if event not in ANALYSIS_AUDIT_EVENTS:
         raise ValueError("unknown analysis audit event")
-    safe_context = {
-        key: str(value)[:limit]
-        for key, value in context.items()
-        if key in _AUDIT_CONTEXT_LIMITS and value is not None
-        for limit in [_AUDIT_CONTEXT_LIMITS[key]]
-    }
+    safe_context = DiagnosticMetadata.model_validate(
+        {key: value for key, value in context.items() if key in _AUDIT_CONTEXT_FIELDS}
+    ).model_dump(exclude_none=True)
     logging.getLogger("boardtrace_api.analysis").info(event, extra=safe_context)
 
 

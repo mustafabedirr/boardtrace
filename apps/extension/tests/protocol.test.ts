@@ -23,6 +23,32 @@ describe('extension fair-play protocol', () => {
     expect(assertFairPlayMessage(captureMessage)).toEqual(captureMessage);
   });
 
+  it('accepts only browser-extension provenance fields for completed games', () => {
+    const completed = {
+      payload: {
+        acquisition_method: 'browser_extension',
+        completed_at: '2026-07-31T10:00:00.000Z',
+        idempotency_key: 'a'.repeat(64),
+        initial_fen: null,
+        manual_retry: false,
+        moves: ['e2e4'],
+        platform: 'lichess',
+        player_color: 'WHITE',
+        result: 'WHITE_WIN',
+        source_checksum: 'b'.repeat(64),
+        source_game_id: 'AbCd1234',
+      },
+      type: 'capture/completed-game',
+    } as const;
+    expect(assertFairPlayMessage(completed)).toEqual(completed);
+    expect(() =>
+      assertFairPlayMessage({
+        ...completed,
+        payload: { ...completed.payload, acquisition_method: 'manual_pgn' },
+      }),
+    ).toThrow(/allowlist/i);
+  });
+
   it('rejects engine fields at every nested runtime-message level', () => {
     const unsafeMessage = {
       ...captureMessage,

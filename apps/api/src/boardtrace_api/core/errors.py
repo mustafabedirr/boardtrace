@@ -11,8 +11,11 @@ logger = logging.getLogger("boardtrace_api")
 
 
 class ApiError(Exception):
-    def __init__(self, code: str, message: str, status_code: int) -> None:
+    def __init__(
+        self, code: str, message: str, status_code: int, *, retry_after: int | None = None
+    ) -> None:
         self.code, self.message, self.status_code = code, message, status_code
+        self.retry_after = retry_after
 
 
 def request_id(request: Request) -> str:
@@ -47,6 +50,8 @@ async def api_error_handler(request: Request, exc: ApiError) -> JSONResponse:
         response.headers["WWW-Authenticate"] = "Bearer"
     if exc.status_code in {401, 403}:
         response.headers["Cache-Control"] = "no-store"
+    if exc.retry_after is not None:
+        response.headers["Retry-After"] = str(max(1, exc.retry_after))
     return response
 
 

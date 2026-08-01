@@ -1,0 +1,25 @@
+{
+	admin off
+	email {$BOARDTRACE_ACME_EMAIL}
+}
+
+boardtrace.duckdns.org {
+	encode zstd gzip
+
+	@minimum_health path /health
+	handle @minimum_health {
+		header Content-Type application/json
+		header Cache-Control no-store
+		respond `{"status":"maintenance"}` 503
+	}
+
+	handle {
+		header Cache-Control no-store
+		respond "BoardTrace pilot is not launched." 503
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}

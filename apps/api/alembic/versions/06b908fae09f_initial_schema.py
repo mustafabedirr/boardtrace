@@ -54,6 +54,7 @@ def upgrade() -> None:
         "normalized_email",
     ):
         op.drop_column("users", column)
+    op.drop_column("analysis_jobs", "admission_correlation_id")
 
 
 def downgrade() -> None:

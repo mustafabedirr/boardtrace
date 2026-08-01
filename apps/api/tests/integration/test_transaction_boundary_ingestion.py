@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 from dataclasses import dataclass
 from uuid import UUID, uuid4
@@ -196,4 +197,81 @@ async def test_ingestion_endpoint_resolves_overridden_terminal_observer(
     finally:
         app.dependency_overrides.clear()
         assert get_ingestion_terminal_observer not in app.dependency_overrides
+        await app.state.database_engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_concurrent_identical_ingestion_returns_one_authoritative_game_and_job(
+    auth_database_session: AsyncSession,
+    auth_sessionmaker: async_sessionmaker[AsyncSession],
+) -> None:
+    resolved = settings()
+    app = create_app(resolved)
+    try:
+        token = await extension_token(auth_database_session, resolved)
+        request_payload = payload()
+        start = asyncio.Event()
+
+        async def ingest() -> httpx.Response:
+            await start.wait()
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(
+                transport=transport, base_url="http://testserver"
+            ) as client:
+                return await client.post(
+                    "/api/v1/games/ingestions",
+                    headers={"Authorization": f"Bearer {token}"},
+                    json=request_payload,
+                )
+
+        first = asyncio.create_task(ingest())
+        second = asyncio.create_task(ingest())
+        start.set()
+        responses = await asyncio.wait_for(asyncio.gather(first, second), timeout=5)
+
+        assert [response.status_code for response in responses] == [201, 201]
+        assert responses[0].json()["id"] == responses[1].json()["id"]
+        assert responses[0].json()["analysis_job_id"] == responses[1].json()["analysis_job_id"]
+        async with auth_sessionmaker() as verification_session:
+            assert await verification_session.scalar(select(func.count(Game.id))) == 1
+            assert await verification_session.scalar(select(func.count(AnalysisJob.id))) == 1
+    finally:
+        await app.state.database_engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_concurrent_conflicting_ingestion_rejects_loser_without_duplicate_state(
+    auth_database_session: AsyncSession,
+    auth_sessionmaker: async_sessionmaker[AsyncSession],
+) -> None:
+    resolved = settings()
+    app = create_app(resolved)
+    try:
+        token = await extension_token(auth_database_session, resolved)
+        first_payload = payload()
+        second_payload = {**first_payload, "source_game_id": str(uuid4())}
+        start = asyncio.Event()
+
+        async def ingest(request_payload: dict[str, object]) -> httpx.Response:
+            await start.wait()
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(
+                transport=transport, base_url="http://testserver"
+            ) as client:
+                return await client.post(
+                    "/api/v1/games/ingestions",
+                    headers={"Authorization": f"Bearer {token}"},
+                    json=request_payload,
+                )
+
+        first = asyncio.create_task(ingest(first_payload))
+        second = asyncio.create_task(ingest(second_payload))
+        start.set()
+        responses = await asyncio.wait_for(asyncio.gather(first, second), timeout=5)
+
+        assert sorted(response.status_code for response in responses) == [201, 409]
+        async with auth_sessionmaker() as verification_session:
+            assert await verification_session.scalar(select(func.count(Game.id))) == 1
+            assert await verification_session.scalar(select(func.count(AnalysisJob.id))) == 1
+    finally:
         await app.state.database_engine.dispose()

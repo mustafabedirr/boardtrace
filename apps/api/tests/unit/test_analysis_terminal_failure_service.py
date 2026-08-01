@@ -48,6 +48,15 @@ class TerminalFailureRepositorySpy:
         return self.accepted
 
 
+class CleanupSpy:
+    def __init__(self, sequence: list[str]) -> None:
+        self.sequence = sequence
+
+    async def delete_for_job(self, job_id: UUID) -> bool:
+        self.sequence.append("cleanup")
+        return True
+
+
 class FailingMetrics:
     def increment(
         self, name: str, *, status: str | None = None, error_code: str | None = None
@@ -68,6 +77,7 @@ def service(
         cast(AsyncSession, SessionSpy(sequence)),
         metrics,
         TerminalFailureRepositorySpy(sequence, accepted),
+        CleanupSpy(sequence),
     )
 
 
@@ -99,9 +109,16 @@ async def test_accepted_terminal_failure_commits_before_success_observability(
     )
 
     assert accepted is True
-    assert sequence == ["mutation", "hook", "commit"]
+    assert sequence == ["mutation", "cleanup", "hook", "commit"]
     assert metrics.counters[("analysis_jobs_failed_total", "FAILED", "terminal_code")] == 1
     assert audit_records == [
+        (
+            "analysis_terminal_game_data_cleanup",
+            {
+                "job_id": str(job_id),
+                "outcome": "deleted",
+            },
+        ),
         (
             "analysis_job_failed",
             {
@@ -110,7 +127,7 @@ async def test_accepted_terminal_failure_commits_before_success_observability(
                 "status": "FAILED",
                 "error_code": "terminal_code",
             },
-        )
+        ),
     ]
 
 
@@ -171,7 +188,7 @@ async def test_before_commit_failure_rolls_back_without_terminal_success_signals
     finally:
         logger.removeHandler(caplog.handler)
 
-    assert sequence == ["mutation", "hook", "rollback"]
+    assert sequence == ["mutation", "cleanup", "hook", "rollback"]
     assert not metrics.counters
     assert not [record for record in caplog.records if record.getMessage() == "analysis_job_failed"]
 
@@ -211,7 +228,7 @@ async def test_audit_and_metrics_adapter_failures_do_not_change_committed_result
         logging.disable(previous_disable)
 
     assert accepted is True
-    assert sequence == ["mutation", "commit"]
+    assert sequence == ["mutation", "cleanup", "commit"]
     messages = [record.getMessage() for record in handler.records]
     assert "analysis audit event failed" in messages
     assert "analysis metric increment failed" in messages

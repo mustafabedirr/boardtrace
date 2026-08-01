@@ -8,6 +8,11 @@ class HealthResponse(BaseModel):
     version: str
 
 
+class MinimumHealthResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    status: str
+
+
 class ReadinessResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
     status: str

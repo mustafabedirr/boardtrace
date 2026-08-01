@@ -1,0 +1,10 @@
+FROM postgres:16-bookworm
+
+RUN apt-get update \
+    && apt-get install --no-install-recommends --yes age awscli \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY infrastructure/production-like/run-backup-restore.sh /usr/local/bin/run-backup-restore
+RUN chmod 0555 /usr/local/bin/run-backup-restore
+
+ENTRYPOINT ["/usr/local/bin/run-backup-restore"]

@@ -8,14 +8,17 @@ const PLAYER_COLOR_ATTRIBUTE = 'data-boardtrace-player-color';
 const RESULT_ATTRIBUTE = 'data-boardtrace-game-result';
 
 export interface CompletedGamePayload {
+  readonly acquisition_method: 'browser_extension';
   readonly completed_at: string;
   readonly idempotency_key: string;
   readonly initial_fen: null;
   readonly moves: readonly string[];
+  readonly manual_retry: false;
   readonly platform: string;
   readonly player_color: 'WHITE' | 'BLACK' | 'UNKNOWN';
   readonly result: 'WHITE_WIN' | 'BLACK_WIN' | 'DRAW' | 'UNKNOWN';
   readonly source_game_id: string;
+  readonly source_checksum: string;
 }
 
 function requiredAttribute(element: Element, name: string): string {
@@ -69,15 +72,20 @@ export async function normalizeCompletedGame(
     'UNKNOWN',
   ] as const);
   return {
+    acquisition_method: 'browser_extension',
     completed_at: new Date(completedAt).toISOString(),
     idempotency_key: await fingerprint(
       JSON.stringify([context.sourceOrigin, context.gameId, completedAt, moves]),
     ),
     initial_fen: null,
     moves,
+    manual_retry: false,
     platform,
     player_color: playerColor,
     result,
     source_game_id: context.gameId,
+    source_checksum: await fingerprint(
+      JSON.stringify([platform.toLowerCase(), context.gameId, moves]),
+    ),
   };
 }

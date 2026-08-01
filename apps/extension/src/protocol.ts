@@ -52,14 +52,17 @@ export interface SelectBoardMessage {
 
 export interface CompletedGameMessage {
   readonly payload: {
+    readonly acquisition_method: 'browser_extension';
     readonly completed_at: string;
     readonly idempotency_key: string;
     readonly initial_fen: null;
     readonly moves: readonly string[];
+    readonly manual_retry: false;
     readonly platform: string;
     readonly player_color: 'WHITE' | 'BLACK' | 'UNKNOWN';
     readonly result: 'WHITE_WIN' | 'BLACK_WIN' | 'DRAW' | 'UNKNOWN';
     readonly source_game_id: string;
+    readonly source_checksum: string;
   };
   readonly type: 'capture/completed-game';
 }
@@ -115,23 +118,28 @@ function isCompletedGamePayload(value: unknown): boolean {
     !isRecord(value) ||
     !hasOnlyKeys(value, [
       'completed_at',
+      'acquisition_method',
       'idempotency_key',
       'initial_fen',
       'moves',
+      'manual_retry',
       'platform',
       'player_color',
       'result',
       'source_game_id',
+      'source_checksum',
     ])
   ) {
     return false;
   }
   return (
+    value.acquisition_method === 'browser_extension' &&
     typeof value.completed_at === 'string' &&
     typeof value.idempotency_key === 'string' &&
     value.initial_fen === null &&
     Array.isArray(value.moves) &&
     value.moves.every((move) => typeof move === 'string') &&
+    value.manual_retry === false &&
     typeof value.platform === 'string' &&
     (value.player_color === 'WHITE' ||
       value.player_color === 'BLACK' ||
@@ -140,7 +148,8 @@ function isCompletedGamePayload(value: unknown): boolean {
       value.result === 'BLACK_WIN' ||
       value.result === 'DRAW' ||
       value.result === 'UNKNOWN') &&
-    typeof value.source_game_id === 'string'
+    typeof value.source_game_id === 'string' &&
+    typeof value.source_checksum === 'string'
   );
 }
 

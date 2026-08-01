@@ -1,8 +1,29 @@
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 from pydantic_settings import SettingsError
 
 from boardtrace_api.config import Environment, LogFormat, Settings
+
+
+def production_environment(monkeypatch: pytest.MonkeyPatch, stockfish_path: str) -> None:
+    values = {
+        "BOARDTRACE_ENVIRONMENT": "production",
+        "BOARDTRACE_CORS_ALLOWED_ORIGINS": '["https://web.example.test"]',
+        "BOARDTRACE_DATABASE_URL": (
+            "postgresql+asyncpg://runtime:non-default@db.internal:5432/boardtrace"
+        ),
+        "BOARDTRACE_JWT_SIGNING_SECRET": "j" * 32,
+        "BOARDTRACE_LOG_FORMAT": "json",
+        "BOARDTRACE_REDIS_URL": "rediss://runtime@redis.internal:6379/0",
+        "BOARDTRACE_RATE_LIMIT_ENABLED": "true",
+        "BOARDTRACE_REFRESH_TOKEN_PEPPER": "p" * 32,
+        "BOARDTRACE_STOCKFISH_PATH": stockfish_path,
+        "BOARDTRACE_TRUSTED_HOSTS": '["api.example.test"]',
+    }
+    for key, value in values.items():
+        monkeypatch.setenv(key, value)
 
 
 def test_defaults_include_local_hosts() -> None:
@@ -39,18 +60,74 @@ def test_invalid_list_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
         Settings()
 
 
-def test_production_wildcard_cors_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("BOARDTRACE_ENVIRONMENT", "production")
+def test_production_wildcard_cors_is_rejected(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    stockfish = tmp_path / "stockfish"
+    stockfish.write_text("fixture")
+    stockfish.chmod(0o755)
+    production_environment(monkeypatch, str(stockfish))
     monkeypatch.setenv("BOARDTRACE_CORS_ALLOWED_ORIGINS", '["*"]')
     with pytest.raises(ValidationError, match="wildcard"):
         Settings()
 
 
-def test_production_explicit_cors_is_accepted(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("BOARDTRACE_ENVIRONMENT", "production")
-    monkeypatch.setenv("BOARDTRACE_CORS_ALLOWED_ORIGINS", '["https://web.example.test"]')
+def test_production_explicit_configuration_is_accepted(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    stockfish = tmp_path / "stockfish"
+    stockfish.write_text("fixture")
+    stockfish.chmod(0o755)
+    production_environment(monkeypatch, str(stockfish))
     settings = Settings()
     assert settings.environment is Environment.PRODUCTION
+
+
+@pytest.mark.parametrize(
+    "variable",
+    [
+        "BOARDTRACE_DATABASE_URL",
+        "BOARDTRACE_JWT_SIGNING_SECRET",
+        "BOARDTRACE_REDIS_URL",
+        "BOARDTRACE_REFRESH_TOKEN_PEPPER",
+        "BOARDTRACE_STOCKFISH_PATH",
+    ],
+)
+def test_production_missing_critical_configuration_fails_fast(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    variable: str,
+) -> None:
+    stockfish = tmp_path / "stockfish"
+    stockfish.write_text("fixture")
+    stockfish.chmod(0o755)
+    production_environment(monkeypatch, str(stockfish))
+    monkeypatch.delenv(variable)
+
+    with pytest.raises(ValidationError, match="requires explicit"):
+        Settings()
+
+
+def test_production_rejects_development_network_defaults(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    stockfish = tmp_path / "stockfish"
+    stockfish.write_text("fixture")
+    stockfish.chmod(0o755)
+    production_environment(monkeypatch, str(stockfish))
+    monkeypatch.setenv("BOARDTRACE_TRUSTED_HOSTS", '["localhost"]')
+
+    with pytest.raises(ValidationError, match="trusted hosts"):
+        Settings()
+
+
+def test_production_rejects_invalid_stockfish_path(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    production_environment(monkeypatch, str(tmp_path / "missing-stockfish"))
+
+    with pytest.raises(ValidationError, match="Stockfish"):
+        Settings()
 
 
 @pytest.mark.parametrize(

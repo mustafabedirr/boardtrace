@@ -6,10 +6,14 @@ import os
 import socket
 import time
 from datetime import UTC, datetime
+from uuid import UUID
 
 from celery import Celery, Task
+from celery.exceptions import TimeLimitExceeded, WorkerLostError
+from celery.signals import task_failure
 from kombu import Queue
 from pydantic import ValidationError
+from redis.asyncio import Redis
 
 from boardtrace_api.analysis.celery_adapter import CeleryAnalysisQueue
 from boardtrace_api.analysis.failures import classify_failure
@@ -21,7 +25,7 @@ from boardtrace_api.analysis.full_game import (
 )
 from boardtrace_api.analysis.observability import (
     NoOpAnalysisMetrics,
-    audit_event,
+    audit_event_safely,
     metric_increment,
     metric_observe,
 )
@@ -38,8 +42,13 @@ from boardtrace_api.db.engine import create_database_engine
 from boardtrace_api.db.session import create_session_factory
 from boardtrace_api.models import Game
 from boardtrace_api.models.enums import AnalysisJobStatus
+from boardtrace_api.queue_admission import QueueAdmissionUnavailable, RedisQueueAdmission
 from boardtrace_api.repositories.analysis_jobs import AnalysisJobRepository
-from boardtrace_api.services.analysis_jobs import AnalysisJobTerminalFailureService, OutboxPublisher
+from boardtrace_api.services.analysis_jobs import (
+    AnalysisJobTerminalFailureService,
+    AnalysisJobTerminalService,
+    OutboxPublisher,
+)
 from boardtrace_api.services.analysis_results import (
     AnalysisResultPersistenceService,
     EngineConfigurationSnapshot,
@@ -78,7 +87,7 @@ celery_app.conf.update(
     },
     worker_prefetch_multiplier=1,
     task_acks_late=True,
-    task_reject_on_worker_lost=True,
+    task_reject_on_worker_lost=False,
     task_soft_time_limit=settings.analysis_task_soft_time_limit_seconds,
     task_time_limit=settings.analysis_task_time_limit_seconds,
     task_ignore_result=True,
@@ -86,7 +95,11 @@ celery_app.conf.update(
         "publish-analysis-outbox": {
             "task": OUTBOX_PUBLISH_TASK,
             "schedule": 5.0,
-        }
+        },
+        "sweep-analysis-lifecycle": {
+            "task": "boardtrace.analysis.sweep-lifecycle",
+            "schedule": 5.0,
+        },
     },
 )
 
@@ -103,10 +116,12 @@ async def _run_analysis(payload: AnalysisTaskPayload, worker_id: str) -> str:
             )
             await session.commit()
             if job is None:
-                audit_event("analysis_job_duplicate_delivery_ignored", job_id=str(payload.job_id))
+                audit_event_safely(
+                    "analysis_job_duplicate_delivery_ignored", job_id=str(payload.job_id)
+                )
                 metric_increment(metrics, "analysis_job_duplicate_deliveries_total")
                 return "duplicate_or_ineligible"
-            audit_event(
+            audit_event_safely(
                 "analysis_job_claimed",
                 job_id=str(payload.job_id),
                 worker_id=worker_id,
@@ -123,7 +138,9 @@ async def _run_analysis(payload: AnalysisTaskPayload, worker_id: str) -> str:
                 await session.rollback()
                 return "claim_lost"
             await session.commit()
-            audit_event("analysis_job_started", job_id=str(payload.job_id), worker_id=worker_id)
+            audit_event_safely(
+                "analysis_job_started", job_id=str(payload.job_id), worker_id=worker_id
+            )
             metric_increment(metrics, "analysis_jobs_started_total")
         try:
             _wait_for_test_gate()
@@ -170,7 +187,7 @@ async def _run_analysis(payload: AnalysisTaskPayload, worker_id: str) -> str:
                     started_at=analysis_started_at,
                     finished_at=analysis_finished_at,
                 )
-                audit_event(
+                audit_event_safely(
                     "analysis_job_succeeded", job_id=str(payload.job_id), worker_id=worker_id
                 )
                 metric_increment(metrics, "analysis_jobs_succeeded_total")
@@ -179,10 +196,11 @@ async def _run_analysis(payload: AnalysisTaskPayload, worker_id: str) -> str:
                     "analysis_job_duration_seconds",
                     (analysis_finished_at - analysis_started_at).total_seconds(),
                 )
+                await _release_capacity(payload.job_id, job.owner_user_id)
                 return "completed"
         except Exception as error:
             decision = classify_failure(error)
-            if not decision.retryable:
+            if not decision.retryable or not settings.analysis_automatic_retry_enabled:
                 async with session_factory() as session:
                     failed = await AnalysisJobTerminalFailureService(session, metrics).fail_job(
                         payload.job_id,
@@ -192,6 +210,8 @@ async def _run_analysis(payload: AnalysisTaskPayload, worker_id: str) -> str:
                         datetime.now(UTC),
                         lease_generation,
                     )
+                if failed:
+                    await _release_capacity(payload.job_id, job.owner_user_id)
                 return "failed" if failed else "failure_rejected"
             now = datetime.now(UTC)
             retry_at = now + RetryPolicy(30, 900, 0).delay_for_attempt(
@@ -252,9 +272,102 @@ async def _publish_outbox() -> int:
         await engine.dispose()
 
 
+async def _release_capacity(job_id: UUID, owner_user_id: UUID) -> None:
+    redis = Redis.from_url(str(settings.redis_url), decode_responses=True)
+    try:
+        promoted = await RedisQueueAdmission(redis).complete_active(str(job_id), str(owner_user_id))
+        if promoted is None:
+            return
+        promoted_id = UUID(promoted)
+        engine = create_database_engine(settings)
+        session_factory = create_session_factory(engine)
+        try:
+            async with session_factory() as session:
+                repository = AnalysisJobRepository(session)
+                promoted_job = await repository.get_by_id(promoted_id, lock=True)
+                if promoted_job is None or promoted_job.status is not AnalysisJobStatus.PENDING:
+                    await session.rollback()
+                    return
+                await repository.ensure_outbox(
+                    promoted_job.id, promoted_job.admission_correlation_id
+                )
+                await session.commit()
+                audit_event_safely(
+                    "analysis_queue_transition",
+                    job_id=str(promoted_job.id),
+                    queue_transition="PROMOTED_ACTIVE",
+                )
+        finally:
+            await engine.dispose()
+    except QueueAdmissionUnavailable:
+        audit_event_safely(
+            "analysis_queue_transition",
+            job_id=str(job_id),
+            queue_transition="RELEASE_DEFERRED_REDIS_UNAVAILABLE",
+        )
+    finally:
+        await redis.aclose()
+
+
+async def _terminalize_external_failure(job_id: UUID, code: str) -> bool:
+    engine = create_database_engine(settings)
+    session_factory = create_session_factory(engine)
+    try:
+        async with session_factory() as session:
+            job = await AnalysisJobRepository(session).get_by_id(job_id)
+            if job is None:
+                return False
+            owner_user_id = job.owner_user_id
+            accepted = await AnalysisJobTerminalService(session, metrics).terminalize(
+                job_id,
+                AnalysisJobStatus.FAILED,
+                code,
+                "Analysis terminated before a valid result was committed.",
+                datetime.now(UTC),
+            )
+        if accepted:
+            await _release_capacity(job_id, owner_user_id)
+        return accepted
+    finally:
+        await engine.dispose()
+
+
+async def _sweep_lifecycle() -> int:
+    now = datetime.now(UTC)
+    redis = Redis.from_url(str(settings.redis_url), decode_responses=True)
+    engine = create_database_engine(settings)
+    session_factory = create_session_factory(engine)
+    terminalized = 0
+    try:
+        admission = RedisQueueAdmission(redis)
+        terminalized += await _expire_waiting_jobs(admission, int(now.timestamp()))
+        async with session_factory() as session:
+            expired_active = await AnalysisJobRepository(session).list_expired_active_jobs(now)
+        for job_id in expired_active:
+            if await _terminalize_external_failure(job_id, "worker_lease_expired"):
+                terminalized += 1
+        return terminalized
+    finally:
+        await redis.aclose()
+        await engine.dispose()
+
+
+async def _expire_waiting_jobs(admission: RedisQueueAdmission, now_epoch: int) -> int:
+    terminalized = 0
+    for raw_job_id in await admission.expire_waiting(now_epoch):
+        if await _terminalize_external_failure(UUID(raw_job_id), "queue_wait_expired"):
+            terminalized += 1
+    return terminalized
+
+
 @celery_app.task(name=OUTBOX_PUBLISH_TASK)
 def publish_analysis_outbox() -> int:
     return asyncio.run(_publish_outbox())
+
+
+@celery_app.task(name="boardtrace.analysis.sweep-lifecycle")
+def sweep_analysis_lifecycle() -> int:
+    return asyncio.run(_sweep_lifecycle())
 
 
 @celery_app.task(name=ANALYSIS_TASK, bind=True)
@@ -262,7 +375,7 @@ def run_analysis_job(task: Task[..., str], payload: dict[str, object]) -> str:
     try:
         validated = AnalysisTaskPayload.model_validate(payload)
     except ValidationError:
-        audit_event("analysis_job_payload_rejected", error_code="invalid_task_payload")
+        audit_event_safely("analysis_job_payload_rejected", error_code="invalid_task_payload")
         metric_increment(metrics, "analysis_job_payload_rejections_total")
         return "payload_rejected"
     request = task.request
@@ -272,3 +385,24 @@ def run_analysis_job(task: Task[..., str], payload: dict[str, object]) -> str:
         extra={"job_id": str(validated.job_id), "correlation_id": str(validated.correlation_id)},
     )
     return asyncio.run(_run_analysis(validated, hostname))
+
+
+@task_failure.connect
+def terminalize_hard_worker_failure(
+    sender: object | None = None,
+    task_id: str | None = None,
+    exception: BaseException | None = None,
+    args: tuple[object, ...] | None = None,
+    **_: object,
+) -> None:
+    if getattr(sender, "name", None) != ANALYSIS_TASK or not isinstance(
+        exception, (TimeLimitExceeded, WorkerLostError)
+    ):
+        return
+    raw_payload = args[0] if args else None
+    try:
+        payload = AnalysisTaskPayload.model_validate(raw_payload)
+    except ValidationError:
+        audit_event_safely("analysis_job_payload_rejected", error_code="invalid_failure_payload")
+        return
+    asyncio.run(_terminalize_external_failure(payload.job_id, "worker_hard_timeout_or_loss"))

@@ -1,0 +1,180 @@
+{
+  "schema_version": "boardtrace-production-decision-intake/v2",
+  "document_version": "v1.0-pilot",
+  "revision": "R5-R2",
+  "prior_version": "v1.0-pilot/R4",
+  "recorded_at": "2026-07-31T22:56:09+03:00",
+  "source_document": "Prompt 20-D-R5-R2 authoritative logging-policy revision",
+  "source_sha256": "e58bb559ab3eabeb650a8ac01f1fb6b368ae5ecbced02ebcfde986b98566df91",
+  "integrated_source_path": "docs/production/decisions/boardtrace-production-decision-package.v1.0-pilot.md",
+  "decision_owner": "Mustafa Bedir",
+  "environment_scope": "closed_production_pilot",
+  "pilot_users": 5,
+  "invariant": "NO ENGINE OUTPUT DURING LIVE GAMES",
+  "production_deployment_approved": false,
+  "closed_pilot_launch_approved": false,
+  "public_launch_approved": false,
+  "independent_review_status": "ABSENT",
+  "decisions": [
+    {
+      "id": "D20R2-001", "title": "Production target, account/project, and region", "status": "PENDING_PROVISIONING",
+      "value": {"provider": "Hetzner Cloud", "region": "nbg1", "scope": "single CX33 VPS", "account": "to be created"},
+      "source_section": "v1.0-pilot section 3 and 14", "decision_owner": "Mustafa Bedir", "required_approver": "Production decision owner", "environment_scope": "closed_production_pilot", "provisioning_status": "PENDING", "notes": "Target is decided; account and VPS do not exist."
+    },
+    {
+      "id": "D20R2-002", "title": "Runtime provider and topology", "status": "DECIDED",
+      "value": {"os": "Ubuntu Server 24.04 LTS", "runtime": "Docker", "topology": "single VPS", "high_availability": false},
+      "source_section": "v1.0-pilot section 3", "decision_owner": "Mustafa Bedir", "required_approver": "Production decision owner", "environment_scope": "closed_production_pilot", "provisioning_status": "NOT_PROVISIONED", "notes": "Architecture is decided; implementation is not provisioned."
+    },
+    {
+      "id": "D20R2-003", "title": "PostgreSQL provider", "status": "PENDING_PROVISIONING",
+      "value": "Self-managed PostgreSQL container on the selected VPS",
+      "source_section": "v1.0-pilot section 5", "decision_owner": "Mustafa Bedir", "required_approver": "Production decision owner", "environment_scope": "closed_production_pilot", "provisioning_status": "PENDING", "notes": "Production database is not created."
+    },
+    {
+      "id": "D20R2-004", "title": "Redis provider", "status": "PENDING_PROVISIONING",
+      "value": "Self-managed Redis container on the selected VPS; not system of record",
+      "source_section": "v1.0-pilot section 5", "decision_owner": "Mustafa Bedir", "required_approver": "Production decision owner", "environment_scope": "closed_production_pilot", "provisioning_status": "PENDING", "notes": "Production Redis is not created."
+    },
+    {
+      "id": "D20R2-005", "title": "Edge and TLS provider", "status": "PENDING_PROVISIONING",
+      "value": {"hostname_provider": "DuckDNS", "hostname": "boardtrace.duckdns.org", "proxy": "Caddy", "tls": "Let's Encrypt"},
+      "source_section": "v1.0-pilot section 4", "decision_owner": "Mustafa Bedir", "required_approver": "Production decision owner", "environment_scope": "closed_production_pilot", "provisioning_status": "PENDING", "notes": "DNS, certificate, and external TLS are unprovisioned."
+    },
+    {
+      "id": "D20R2-006", "title": "Monitoring provider", "status": "PENDING_PROVISIONING",
+      "value": "Uptime Kuma plus basic Docker and host metrics",
+      "source_section": "v1.0-pilot section 9", "decision_owner": "Mustafa Bedir", "required_approver": "Production decision owner", "environment_scope": "closed_production_pilot", "provisioning_status": "PENDING", "notes": "Monitoring is not activated."
+    },
+    {
+      "id": "D20R2-007", "title": "Alerting provider", "status": "PENDING_PROVISIONING",
+      "value": "Telegram bot BoardTrace Alerts routed to BoardTrace Pilot group",
+      "source_section": "v1.0-pilot section 9 and 14", "decision_owner": "Mustafa Bedir", "required_approver": "Production decision owner", "environment_scope": "closed_production_pilot", "provisioning_status": "PENDING", "notes": "Bot, group, token, and identifiers do not exist."
+    },
+    {
+      "id": "D20R2-008", "title": "Secret manager", "status": "DECIDED",
+      "value": "Root-only .env on the VPS; never committed or logged",
+      "source_section": "v1.0-pilot section 11", "decision_owner": "Mustafa Bedir", "required_approver": "Production decision owner", "environment_scope": "closed_production_pilot", "provisioning_status": "NOT_PROVISIONED", "notes": "No actual production secret or env file exists."
+    },
+    {
+      "id": "D20R2-009", "title": "Artifact registry and CI/CD", "status": "PENDING_PROVISIONING",
+      "value": {"registry": "ghcr.io/mustafabedirr/boardtrace", "visibility": "private", "ci": "GitHub Actions", "deployment": "manual"},
+      "source_section": "v1.0-pilot section 11", "decision_owner": "Mustafa Bedir", "required_approver": "Production decision owner", "environment_scope": "closed_production_pilot", "provisioning_status": "PENDING", "notes": "Credentials, workflow, and production image are absent."
+    },
+    {
+      "id": "D20R2-010", "title": "Business and workload forecast", "status": "DECIDED",
+      "value": {"users": 5, "concurrent_users": "1-2", "games_per_user_per_day": 2, "analyses_per_day": 10, "peak_analyses_per_hour": 2},
+      "source_section": "v1.0-pilot section 2", "decision_owner": "Mustafa Bedir", "required_approver": "Production decision owner", "environment_scope": "closed_production_pilot", "provisioning_status": "NOT_REQUIRED", "notes": "Closed-pilot forecast is explicit."
+    },
+    {
+      "id": "D20R2-011", "title": "Initial sizing, headroom, and scaling", "status": "DECIDED",
+      "value": {"vps_plan": "CX33", "global_concurrent_analyses": 2, "per_user_active_analyses": 1, "maximum_queue": 3, "expansion_gate": "2 stable weeks, zero critical incidents, 95% within 3 minutes"},
+      "source_section": "v1.0-pilot sections 2, 3, and 5", "decision_owner": "Mustafa Bedir", "required_approver": "Production decision owner", "environment_scope": "closed_production_pilot", "provisioning_status": "NOT_REQUIRED", "notes": "Sizing decision is not capacity certification."
+    },
+    {
+      "id": "D20R2-012", "title": "Production rate-limit policy", "status": "DECIDED",
+      "value": {"authenticated_user_rpm": 30, "global_authenticated_rpm": 120, "analysis_start_limit": 3, "analysis_start_window_minutes": 10, "manual_retry_limit": 2, "manual_retry_window_minutes": 15, "automatic_retry": false, "per_user_active_analyses": 1, "global_active_analyses": 2, "maximum_queue": 3, "anonymous_api": "PROHIBITED_EXCEPT_MINIMUM_HEALTH", "health_path": "/health", "health_ip_rpm": 30, "health_exposes_metadata": false, "failed_login_limit": 10, "failed_login_window_minutes": 15, "failed_login_block_minutes": 30, "rate_limit_status": 429, "retry_after_required": true, "state_backend": "REDIS_SHARED", "redis_failure": "FAIL_CLOSED", "redis_unavailable_status": 503, "redis_retry_after_seconds": 60, "masked_log_identity": true, "log_fields": ["masked_user", "masked_ip", "endpoint", "limit_category", "timestamp"], "log_retention_days": 7, "recorded_at": "2026-07-31T16:40:14+03:00"},
+      "source_section": "Prompt 20-D-R4 / D20R2-012", "decision_owner": "Mustafa Bedir", "required_approver": "Product, Security, Engineering, and Operations authority", "environment_scope": "closed_production_pilot", "provisioning_status": "NOT_REQUIRED", "notes": "Human policy is complete; runtime implementation remains blocked by R4-010."
+    },
+    {
+      "id": "D20R2-013", "title": "Monitoring and alert policy", "status": "DECIDED",
+      "value": {"telegram_alerts": ["application unavailable", "API health failed", "critical container stopped", "server unavailable"], "cpu_percent": 85, "ram_percent": 85, "disk_warning_percent": 80, "disk_stop_percent": 90},
+      "source_section": "v1.0-pilot section 9", "decision_owner": "Mustafa Bedir", "required_approver": "Production decision owner", "environment_scope": "closed_production_pilot", "provisioning_status": "NOT_REQUIRED", "notes": "Routes remain pending under D20R2-007."
+    },
+    {
+      "id": "D20R2-014", "title": "On-call and incident-command roles", "status": "DECIDED",
+      "value": {"primary_on_call": "Mustafa Bedir", "incident_commander": "Mustafa Bedir", "secondary_on_call": "Ahmet Bedir", "secondary_trigger": "PRIMARY_UNREACHABLE", "secondary_allowed_actions": ["STOP_SERVICE", "RESTART_CONTAINERS", "ROLLBACK_KNOWN_GOOD_IMAGE", "BASIC_DOCUMENTED_RECOVERY"], "secondary_forbidden_actions": ["ARCHITECTURE_CHANGE", "NEW_RELEASE", "PUBLIC_LAUNCH", "RISK_ACCEPTANCE", "PILOT_EXPANSION", "POLICY_CHANGE"], "communications_primary": "Mustafa Bedir", "communications_fallback": "Ahmet Bedir", "user_channel": "BoardTrace Pilot Telegram group", "severity_response_minutes": {"SEV-1": 15, "SEV-2": 60, "SEV-3": 1440}, "sev1_fail_closed": true, "incident_retention_days": {"SEV-1": 365, "SEV-2": 365, "SEV-3": 90}, "post_incident_review": {"SEV-1": "MANDATORY", "SEV-2": "MANDATORY", "SEV-3": "OPTIONAL"}, "post_incident_review_fields": ["summary", "impact", "timeline", "root_cause", "actions", "corrective_actions", "owner", "target_date"], "secondary_access_provisioned": false, "recorded_at": "2026-07-31T16:40:14+03:00"},
+      "source_section": "Prompt 20-D-R4 / D20R2-014", "decision_owner": "Mustafa Bedir", "required_approver": "Operations and Release authority", "environment_scope": "closed_production_pilot", "provisioning_status": "NOT_REQUIRED", "notes": "Role decision is complete; secondary access/runbook/drill remain blocked by R4-007."
+    },
+    {
+      "id": "D20R2-015", "title": "Backup, PITR, RPO/RTO, and restore policy", "status": "DECIDED",
+      "value": {"pitr": "DISABLED_FOR_CLOSED_PILOT", "backup": "DAILY_FULL_LOGICAL_POSTGRESQL", "encryption": "AGE_BEFORE_OFFSITE_UPLOAD", "offsite_retention_days": 30, "restore_test": "MONTHLY", "rpo_hours": 24, "rto_hours": 4, "reassessment_triggers": ["PILOT_COMPLETION", "USER_INCREASE", "DATA_VOLUME_INCREASE", "BUSINESS_CRITICALITY_INCREASE", "MANAGED_POSTGRES_OR_WAL_ARCHITECTURE_CHANGE"], "recorded_at": "2026-07-31T16:40:14+03:00"},
+      "source_section": "Prompt 20-D-R4 / D20R2-015", "decision_owner": "Mustafa Bedir", "required_approver": "Production decision owner", "environment_scope": "closed_production_pilot", "provisioning_status": "NOT_REQUIRED", "notes": "No PITR is explicit and linked to accepted risk R4-006."
+    },
+    {
+      "id": "D20R2-016", "title": "Retention, deletion, and privacy approval", "status": "DECIDED",
+      "value": {"data_minimization": true, "persistent_personal_data": ["internal_user_id", "username_or_email", "authentication_records", "technical_security_logs"], "excluded_by_default": ["behavioral_profiling", "unnecessary_analytics", "marketing_data", "permanent_game_history", "permanent_analysis_history", "raw_game_content_logs"], "account_retention": "WHILE_ACTIVE", "deletion_deadline_days": 30, "backup_rotation_days": 30, "security_log_retention_days": 7, "sharing": "LEGAL_NECESSITY_ONLY", "request_channel": "BOARDTRACE_PILOT_TELEGRAM_INITIATION_PRIVATE_FOLLOWUP", "identity_verification": "REGISTERED_EMAIL_LINK_OR_CODE", "access_response_deadline_days": 30, "privacy_notice_before_processing": true, "diagnostic_logging": {"active_policy": "METADATA_ONLY", "supersedes": "R4_FULL_PGN_24_HOUR_LOGGING", "full_pgn": "PROHIBITED", "fen": "PROHIBITED", "raw_move_lists": "PROHIBITED", "game_request_bodies": "PROHIBITED", "reconstructable_engine_io": "PROHIBITED", "arbitrary_payload_fields": "PROHIBITED", "dozzle_access": "SSH_TUNNEL_ONLY_GENERAL_LOGS"}, "recorded_at": "2026-07-31T22:56:09+03:00"},
+      "source_section": "Prompt 20-D-R4 / D20R2-016", "decision_owner": "Mustafa Bedir", "required_approver": "Privacy and Data authority", "environment_scope": "closed_production_pilot", "provisioning_status": "NOT_REQUIRED", "notes": "Telegram initiates only; sensitive handling is private after email verification."
+    },
+    {
+      "id": "D20R2-017", "title": "Production data provenance policy", "status": "DECIDED",
+      "value": {"temporary_fields": ["source_platform", "source_game_id", "acquisition_method", "checksum"], "delete_at_terminal_state": true, "source_mismatch": "FAIL_CLOSED", "unsupported_sources": "REJECT", "manual_pgn_default": "REJECT", "allowlist": "VERSION_CONTROLLED_CODE_REVIEWED_CI_TESTED", "runtime_mutable_allowlist": false, "error_log_retention_days": 7, "diagnostic_game_hash": {"canonical_representation_required": true, "operational_retention_only": true, "analysis_history": false, "permanent_user_profile": false, "raw_game_reconstruction": false}, "recorded_at": "2026-07-31T22:56:09+03:00"},
+      "source_section": "Prompt 20-D-R4 / D20R2-017", "decision_owner": "Mustafa Bedir", "required_approver": "Production Data / Provenance Owner", "environment_scope": "closed_production_pilot", "provisioning_status": "NOT_REQUIRED", "notes": "Supersedes R3's incomplete artifact-only interpretation of this identity."
+    },
+    {
+      "id": "D20R2-018", "title": "User and incident communication policy", "status": "DECIDED",
+      "value": {"channel": "BoardTrace Pilot Telegram group", "initial_notice_minutes": {"SEV-1": 30, "SEV-2": 120}, "sev3": "ONLY_IF_USER_AFFECTING", "update_minutes": {"SEV-1": 60, "SEV-2": 240}, "closure_fields": ["impact_summary", "start_time", "end_time", "service_status", "user_action"], "planned_maintenance_notice_hours": 24, "maintenance_window": "SUNDAY_02:00-04:00_UTC+03:00", "emergency_maintenance_without_notice": true, "restricted_security_disclosure": true, "recorded_at": "2026-07-31T16:40:14+03:00"},
+      "source_section": "Prompt 20-D-R4 / D20R2-018", "decision_owner": "Mustafa Bedir", "required_approver": "Support and Release authority", "environment_scope": "closed_production_pilot", "provisioning_status": "NOT_REQUIRED", "notes": "Communication policy is decided; Telegram provisioning remains external work."
+    },
+    {
+      "id": "D20R2-019", "title": "Closed-pilot launch window", "status": "DECIDED",
+      "value": {"window": "FIRST_SUNDAY_AFTER_ALL_TECHNICAL_GO_NO_GO_CHECKS_PASS_02:00-04:00_UTC+03:00", "authority": "Mustafa Bedir", "precondition": "ALL_MANDATORY_TECHNICAL_GO_NO_GO_CHECKS_PASS", "grants_launch_authorization": false, "closed_pilot_launch": "NOT_YET_GRANTED", "public_launch": "NOT_GRANTED", "recorded_at": "2026-07-31T16:40:14+03:00"},
+      "source_section": "Prompt 20-D-R4 / D20R2-019", "decision_owner": "Mustafa Bedir", "required_approver": "Release, Operations, and Business authority", "environment_scope": "closed_production_pilot", "provisioning_status": "NOT_REQUIRED", "notes": "Conditional real window does not grant launch or prove technical go/no-go."
+    },
+    {
+      "id": "D20R2-020", "title": "Production Product Owner sign-off", "status": "DECIDED",
+      "value": {"role": "Production Product Owner", "accountable_person": "Mustafa Bedir", "approval": "APPROVED", "scope": ["closed-pilot product scope", "five-user limit", "product behavior", "success criteria", "public-launch exclusion"], "recorded_at": "2026-07-31T16:40:14+03:00", "source": "R4_AUTHORITATIVE_INTAKE", "independent_review": "ABSENT", "role_concentration_risk": "R4-003"},
+      "source_section": "Prompt 20-D-R4 / D20R2-020", "decision_owner": "Mustafa Bedir", "required_approver": "Production Product Owner", "environment_scope": "closed_production_pilot", "provisioning_status": "NOT_REQUIRED", "notes": "Role-scoped approval; no organizational independence."
+    },
+    {
+      "id": "D20R2-021", "title": "Production Technical Owner sign-off", "status": "DECIDED",
+      "value": {"role": "Production Technical Owner", "accountable_person": "Mustafa Bedir", "approval": "APPROVED", "scope": ["architecture", "Docker composition", "PostgreSQL and Redis placement", "deployment and rollback", "technical go/no-go", "runtime-policy compatibility"], "recorded_at": "2026-07-31T16:40:14+03:00", "source": "R4_AUTHORITATIVE_INTAKE", "independent_review": "ABSENT", "role_concentration_risk": "R4-003"},
+      "source_section": "Prompt 20-D-R4 / D20R2-021", "decision_owner": "Mustafa Bedir", "required_approver": "Production Technical Owner", "environment_scope": "closed_production_pilot", "provisioning_status": "NOT_REQUIRED", "notes": "Role-scoped approval; no organizational independence."
+    },
+    {
+      "id": "D20R2-022", "title": "Production Security Owner sign-off", "status": "DECIDED",
+      "value": {"role": "Production Security Owner", "accountable_person": "Mustafa Bedir", "approval": "APPROVED", "scope": ["administrative access", "firewall and Fail2ban", "secrets", "log access", "backup encryption", "fail-closed security", "NO ENGINE OUTPUT DURING LIVE GAMES"], "recorded_at": "2026-07-31T16:40:14+03:00", "source": "R4_AUTHORITATIVE_INTAKE", "independent_review": "ABSENT", "role_concentration_risk": "R4-003"},
+      "source_section": "Prompt 20-D-R4 / D20R2-022", "decision_owner": "Mustafa Bedir", "required_approver": "Production Security Owner", "environment_scope": "closed_production_pilot", "provisioning_status": "NOT_REQUIRED", "notes": "Role-scoped approval; no organizational independence."
+    },
+    {
+      "id": "D20R2-023", "title": "Production Privacy Owner sign-off", "status": "DECIDED",
+      "value": {"role": "Production Privacy Owner", "accountable_person": "Mustafa Bedir", "approval": "APPROVED", "scope": ["data minimization", "retention and deletion", "security logs", "data requests", "privacy notice", "sharing restrictions"], "recorded_at": "2026-07-31T16:40:14+03:00", "source": "R4_AUTHORITATIVE_INTAKE", "independent_review": "ABSENT", "role_concentration_risk": "R4-003"},
+      "source_section": "Prompt 20-D-R4 / D20R2-023", "decision_owner": "Mustafa Bedir", "required_approver": "Production Privacy Owner", "environment_scope": "closed_production_pilot", "provisioning_status": "NOT_REQUIRED", "notes": "Role-scoped approval; no organizational independence."
+    },
+    {
+      "id": "D20R2-024", "title": "Production Operations Owner sign-off", "status": "DECIDED",
+      "value": {"role": "Production Operations Owner", "accountable_person": "Mustafa Bedir", "approval": "APPROVED", "scope": ["VPS and OS", "Docker operations", "monitoring", "backup and restore", "manual deployment and rollback", "maintenance", "incident coordination"], "recorded_at": "2026-07-31T16:40:14+03:00", "source": "R4_AUTHORITATIVE_INTAKE", "independent_review": "ABSENT", "role_concentration_risk": "R4-003"},
+      "source_section": "Prompt 20-D-R4 / D20R2-024", "decision_owner": "Mustafa Bedir", "required_approver": "Production Operations Owner", "environment_scope": "closed_production_pilot", "provisioning_status": "NOT_REQUIRED", "notes": "Role-scoped approval; no organizational independence."
+    },
+    {
+      "id": "D20R2-025", "title": "Production Reliability / Availability Owner sign-off", "status": "DECIDED",
+      "value": {"role": "Production Reliability / Availability Owner", "accountable_person": "Mustafa Bedir", "approval": "APPROVED", "scope": ["RTO and RPO", "restore verification", "capacity and concurrency", "queue and timeout", "monitoring thresholds", "recovery", "single-VPS risk"], "recorded_at": "2026-07-31T16:40:14+03:00", "source": "R4_AUTHORITATIVE_INTAKE", "independent_review": "ABSENT", "role_concentration_risk": "R4-003"},
+      "source_section": "Prompt 20-D-R4 / D20R2-025", "decision_owner": "Mustafa Bedir", "required_approver": "Production Reliability / Availability Owner", "environment_scope": "closed_production_pilot", "provisioning_status": "NOT_REQUIRED", "notes": "Role-scoped approval; no organizational independence."
+    },
+    {
+      "id": "D20R2-026", "title": "Production Data / Provenance Owner sign-off", "status": "DECIDED",
+      "value": {"role": "Production Data / Provenance Owner", "accountable_person": "Mustafa Bedir", "approval": "APPROVED", "scope": ["source verification", "provenance metadata", "checksums", "source allowlist", "source mismatch", "error retention"], "recorded_at": "2026-07-31T16:40:14+03:00", "source": "R4_AUTHORITATIVE_INTAKE", "independent_review": "ABSENT", "role_concentration_risk": "R4-003"},
+      "source_section": "Prompt 20-D-R4 / D20R2-026", "decision_owner": "Mustafa Bedir", "required_approver": "Production Data / Provenance Owner", "environment_scope": "closed_production_pilot", "provisioning_status": "NOT_REQUIRED", "notes": "Role-scoped approval; no organizational independence."
+    },
+    {
+      "id": "D20R2-027", "title": "Production Launch / Release Approver sign-off", "status": "DECIDED",
+      "value": {"role": "Production Launch / Release Approver", "accountable_person": "Mustafa Bedir", "approval": "APPROVED", "scope": ["technical go/no-go evaluation", "closed-pilot launch decision", "initial deployment approval", "pilot expansion", "release and rollback"], "recorded_at": "2026-07-31T16:40:14+03:00", "source": "R4_AUTHORITATIVE_INTAKE", "independent_review": "ABSENT", "role_concentration_risk": "R4-003", "public_launch_approved": false, "technical_go_no_go_passed": false, "deployment_executable": false},
+      "source_section": "Prompt 20-D-R4 / D20R2-027", "decision_owner": "Mustafa Bedir", "required_approver": "Production Launch / Release Approver", "environment_scope": "closed_production_pilot", "provisioning_status": "NOT_REQUIRED", "notes": "Does not approve public launch, technical go/no-go, or deployment executability."
+    },
+    {
+      "id": "D20R2-028", "title": "Risk disposition and acceptance register", "status": "DECIDED",
+      "value": {"risk_ids": ["R4-001", "R4-002", "R4-003", "R4-004", "R4-005", "R4-006", "R4-007", "R4-008", "R4-009", "R4-010", "R4-011"], "accept_requires_dated_owner_approval": true, "expired_acceptance_blocks": true, "mitigation_requires_verified_evidence": true, "manual_bypass": false, "recorded_at": "2026-07-31T16:40:14+03:00"},
+      "source_section": "Prompt 20-D-R4 / D20R2-028", "decision_owner": "Mustafa Bedir", "required_approver": "Per-risk acceptance authority", "environment_scope": "closed_production_pilot", "provisioning_status": "NOT_REQUIRED", "notes": "Five active ACCEPT, three open MITIGATE, three closed records, and three deployment-blocking risks after R5-R2 verification."
+    }
+  ],
+  "risks": [
+    {"id": "R4-001", "title": "Internet-exposed password-only SSH", "description": "Password-only public SSH is unsafe.", "scope": "production", "owner": "Mustafa Bedir", "disposition": "MITIGATE", "state": "OPEN", "controls": ["enable SSH keys", "disable password authentication", "disable direct root", "retain port 48227", "enable Fail2ban and rate limiting"], "recorded_at": "2026-07-31T16:40:14+03:00", "review": "At mitigation completion, then every 90 days", "expiry": "Not accepted; remains open until verified", "deployment_blocker": true, "implementation_evidence": []},
+    {"id": "R4-002", "title": "Single VPS / no high availability", "description": "A single VPS failure can interrupt the service.", "scope": "closed five-user pilot", "owner": "Mustafa Bedir", "disposition": "ACCEPT", "state": "ACTIVE", "controls": ["daily encrypted backup", "30-day R2 retention", "monthly restore", "4-hour RTO", "24-hour RPO", "rebuild and rollback", "monitoring and alerts"], "recorded_at": "2026-07-31T16:40:14+03:00", "review": "User, criticality, pilot, or architecture change", "expiry": "Pilot completion or material scope increase", "deployment_blocker": false, "implementation_evidence": []},
+    {"id": "R4-003", "title": "Organizational role concentration", "description": "Mustafa Bedir holds all eight roles without independent review.", "scope": "closed five-user pilot", "owner": "Mustafa Bedir", "disposition": "ACCEPT", "state": "ACTIVE", "controls": ["disclose conflicts", "separate role-scoped sign-offs", "prohibit public launch", "require independent technical and security review before public launch"], "recorded_at": "2026-07-31T16:40:14+03:00", "review": "Public-launch preparation, scale increase, team change, or independent assignment", "expiry": "Pilot completion or public-launch evaluation", "deployment_blocker": false, "implementation_evidence": []},
+    {"id": "R4-004", "title": "Session-only analysis results", "description": "Closing the page or session loses results and no history exists.", "scope": "closed pilot", "owner": "Mustafa Bedir", "disposition": "ACCEPT", "state": "ACTIVE", "controls": ["pre-analysis notice", "session-close warning", "no-history disclosure"], "recorded_at": "2026-07-31T16:40:14+03:00", "review": "Pilot completion or history-feature consideration", "expiry": "First review trigger unless renewed", "deployment_blocker": false, "implementation_evidence": []},
+    {"id": "R4-005", "title": "Full PGN in technical logs (superseded)", "description": "The former 24-hour full-PGN logging acceptance is superseded; raw PGN, FEN, move lists, game request bodies, and reconstructable engine I/O are prohibited in every log category.", "scope": "closed pilot", "owner": "Mustafa Bedir", "disposition": "CLOSED", "state": "SUPERSEDED", "controls": ["metadata-only diagnostic contract", "central unsafe-content suppression", "typed allowlisted fields", "SSH-tunnel-only Dozzle for general logs", "no raw game content"], "recorded_at": "2026-07-31T22:56:09+03:00", "review": "On privacy, logging, or observability architecture change", "expiry": "Closed by R5-R2 authoritative policy revision", "deployment_blocker": false, "implementation_evidence": ["docs/production/decisions/boardtrace-production-logging-policy-supersession-r5-r2.md"]},
+    {"id": "R4-006", "title": "No PITR / up to 24-hour data loss", "description": "Data after the latest daily backup may be lost.", "scope": "closed five-user pilot", "owner": "Mustafa Bedir", "disposition": "ACCEPT", "state": "ACTIVE", "controls": ["daily logical backup", "age encryption", "30-day R2 retention", "size and checksum verification", "monthly restore", "4-hour RTO", "24-hour RPO"], "recorded_at": "2026-07-31T16:40:14+03:00", "review": "Every 90 days and on user, data, or criticality increase", "expiry": "If not renewed at review", "deployment_blocker": false, "implementation_evidence": []},
+    {"id": "R4-007", "title": "Single-operator RTO dependency", "description": "The RTO may be missed when Mustafa Bedir is unavailable.", "scope": "closed pilot", "owner": "Mustafa Bedir", "disposition": "MITIGATE", "state": "OPEN", "controls": ["provision scoped Ahmet Bedir access", "recovery runbook", "verify stop/restart/rollback/recovery", "initial and 90-day drills"], "recorded_at": "2026-07-31T16:40:14+03:00", "review": "At initial drill and after material infrastructure change", "expiry": "Not accepted; remains open until verified", "deployment_blocker": true, "implementation_evidence": []},
+    {"id": "R4-008", "title": "Temporary DuckDNS dependency", "description": "DuckDNS may cause outage, hostname loss, or migration disruption.", "scope": "closed pilot", "owner": "Mustafa Bedir", "disposition": "ACCEPT", "state": "ACTIVE", "controls": ["configurable extension endpoint", "no hard-coded hostname", "migration plan", "TLS revalidation"], "recorded_at": "2026-07-31T16:40:14+03:00", "review": "Availability issue, hostname loss, permanent domain, or pilot expansion", "expiry": "At first review trigger unless renewed", "deployment_blocker": false, "implementation_evidence": []},
+    {"id": "R4-009", "title": "Deployment with missing provisioning or secrets", "description": "Production could deploy without mandatory external resources.", "scope": "production deployment", "owner": "Mustafa Bedir", "disposition": "MITIGATE", "state": "OPEN", "controls": ["automatic gate for Telegram, R2, GHCR, DuckDNS, and code-derived env", "prohibit partial deployment", "prohibit manual bypass"], "recorded_at": "2026-07-31T16:40:14+03:00", "review": "When automatic gate exists and passes", "expiry": "Not accepted; remains open until verified", "deployment_blocker": true, "implementation_evidence": []},
+    {"id": "R4-010", "title": "Runtime / decision-package mismatch", "description": "Runtime alignment for retention, queue, concurrency, retry, terminal cleanup, and metadata-only logging was implemented and verified in R5-R2.", "scope": "production runtime", "owner": "Mustafa Bedir", "disposition": "CLOSED", "state": "VERIFIED", "controls": ["metadata-only logging allowlist and unsafe-content suppression", "Redis-backed FIFO consent and bounded admission", "fail-closed Redis dependency", "central terminal cleanup and late-result rejection", "automated policy and runtime tests"], "recorded_at": "2026-07-31T23:32:07+03:00", "review": "On runtime-policy, logging, queue, or lifecycle change", "expiry": "Closed by R5-R2 implementation and verification; reopen on material control change", "deployment_blocker": false, "implementation_evidence": ["docs/operations/production-runtime-policy-alignment-r5-r2.md", "scripts/validate_integrated_admission_lifecycle.py", "apps/api/tests/test_logging.py"]},
+    {"id": "R4-011", "title": "Docker and integration validation not current", "description": "Current production-like Docker validation covers health, PostgreSQL, Redis, migrations, queue lifecycle, fail-closed admission, encrypted object upload, checksum, and isolated restore.", "scope": "production-like validation", "owner": "Mustafa Bedir", "disposition": "CLOSED", "state": "VERIFIED", "controls": ["repeatable production-like harness", "PostgreSQL and Redis health validation", "queue/concurrency/timeout/cancellation validation", "encrypted backup/object verification/isolated restore", "complete teardown verification"], "recorded_at": "2026-07-31T23:32:07+03:00", "review": "After material runtime, composition, queue, or backup change", "expiry": "Closed by clean R5-R2 run bt20dr5r2-20260731T233207-clean; rerun after material change", "deployment_blocker": false, "implementation_evidence": ["docs/operations/production-runtime-policy-alignment-r5-r2.md", "scripts/run_production_like_validation.ps1", "infrastructure/production-like/compose.yaml"]}
+  ],
+  "technical_blockers": [
+    "SSH key authentication is not implemented and password SSH is not verified disabled.",
+    "Ahmet Bedir limited access, recovery runbook, and initial drill are not implemented and verified.",
+    "External Hetzner, DuckDNS, Telegram, Cloudflare R2, GHCR, TLS, and production environment resources are pending.",
+    "The mandatory no-bypass external provisioning gate is not implemented and passed.",
+    "The technical go/no-go is not complete."
+  ]
+}

@@ -1,13 +1,21 @@
 import json
 import logging
+from io import StringIO
 
 import httpx
 import pytest
 from fastapi import APIRouter
+from pydantic import ValidationError
 
 from boardtrace_api.app import create_app
 from boardtrace_api.config import LogFormat, Settings
-from boardtrace_api.logging import JsonFormatter, configure_logging, request_id_context
+from boardtrace_api.logging import (
+    DiagnosticMetadata,
+    JsonFormatter,
+    SafeDiagnosticFilter,
+    configure_logging,
+    request_id_context,
+)
 
 
 def test_json_formatter_includes_request_id() -> None:
@@ -25,6 +33,9 @@ def test_json_formatter_includes_request_id() -> None:
         request_id_context.reset(token)
     assert payload["request_id"] == "request-123"
     assert payload["method"] == "GET"
+    assert payload["event"] == "request completed"
+    assert payload["component"] == "boardtrace_api"
+    assert "outcome" in payload
     assert "authorization" not in payload
 
 
@@ -49,6 +60,25 @@ def test_json_formatter_only_emits_allowlisted_fields() -> None:
     assert "fen" not in payload
     assert "screenshot" not in payload
     assert "secret" not in json.dumps(payload)
+
+
+def test_json_formatter_escapes_untrusted_control_characters_into_one_event() -> None:
+    record = logging.LogRecord(
+        "boardtrace_api",
+        logging.WARNING,
+        "",
+        0,
+        'bounded\nforgery\r\t\u001b[31m{"event":"fake"}',
+        (),
+        None,
+    )
+
+    rendered = JsonFormatter().format(record)
+    payload = json.loads(rendered)
+
+    assert len(rendered.splitlines()) == 1
+    assert payload["event"] == 'bounded\nforgery\r\t\u001b[31m{"event":"fake"}'
+    assert payload["component"] == "boardtrace_api"
 
 
 class RecordCollector(logging.Handler):
@@ -149,3 +179,76 @@ async def test_unexpected_error_is_logged_without_internal_details() -> None:
     assert response.status_code == 500
     assert payload["request_id"] == response.json()["error"]["request_id"]
     assert "internal test detail" not in json.dumps(payload)
+
+
+@pytest.mark.parametrize(
+    "unsafe",
+    (
+        '[Event "Synthetic"]\n1. e4 e5 2. Nf3',
+        "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        '{"initial_fen":"8/8/8/8/8/8/8/8 w - - 0 1"}',
+        '{"moves":["e2e4","e7e5"]}',
+        "Bearer synthetic-secret-token",
+        "person@example.test",
+        "192.0.2.44",
+    ),
+)
+def test_central_filter_suppresses_unsafe_api_worker_and_outbox_content(unsafe: str) -> None:
+    stream = StringIO()
+    handler = logging.StreamHandler(stream)
+    handler.addFilter(SafeDiagnosticFilter())
+    handler.setFormatter(JsonFormatter())
+    logger = logging.getLogger("boardtrace_api.worker")
+    previous_handlers, previous_level, previous_propagate = (
+        logger.handlers[:],
+        logger.level,
+        logger.propagate,
+    )
+    logger.handlers[:] = [handler]
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+    try:
+        logger.info("outbox callback failed: %s", unsafe, extra={"operation": unsafe})
+    finally:
+        logger.handlers[:] = previous_handlers
+        logger.setLevel(previous_level)
+        logger.propagate = previous_propagate
+    rendered = stream.getvalue()
+    assert unsafe not in rendered
+    payload = json.loads(rendered)
+    assert payload["event"] == "diagnostic_content_suppressed"
+    assert payload["error_code"] == "unsafe_diagnostic_content"
+    assert payload["outcome"] == "suppressed"
+
+
+def test_typed_diagnostic_metadata_rejects_payloads_and_game_content() -> None:
+    metadata = DiagnosticMetadata(
+        job_id="8c6d4aac-768f-42a0-8fef-f33250211988",
+        outcome="failed",
+        game_checksum="a" * 64,
+    )
+    assert metadata.game_checksum == "a" * 64
+    with pytest.raises(ValidationError, match="unsafe diagnostic content"):
+        DiagnosticMetadata(error_code="moves=e2e4")
+    with pytest.raises(ValidationError, match="Extra inputs"):
+        DiagnosticMetadata.model_validate({"request_body": {"moves": ["e2e4"]}})
+
+
+def test_server_identifier_with_move_like_uuid_segment_is_not_suppressed() -> None:
+    job_id = "54b20902-b7a6-4c1d-9c80-9cf69d2aef77"
+    metadata = DiagnosticMetadata(job_id=job_id)
+    assert metadata.job_id == job_id
+
+    record = logging.makeLogRecord(
+        {"name": "boardtrace_api.analysis", "msg": "analysis_job_created", "job_id": job_id}
+    )
+    assert SafeDiagnosticFilter().filter(record)
+    assert record.getMessage() == "analysis_job_created"
+    assert record.__dict__["job_id"] == job_id
+
+
+def test_server_identifier_still_rejects_game_fields_and_unbounded_characters() -> None:
+    with pytest.raises(ValidationError, match="unsafe diagnostic content"):
+        DiagnosticMetadata(job_id="moves=e2e4")
+    with pytest.raises(ValidationError, match="unsafe diagnostic content"):
+        DiagnosticMetadata(worker_id="worker with spaces")

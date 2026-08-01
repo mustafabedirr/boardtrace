@@ -1,0 +1,119 @@
+{
+  "schema_version": "boardtrace-production-provisioning/v1",
+  "mode": "PLAN_AND_DRY_RUN",
+  "recorded_at": "2026-08-01T02:16:22+03:00",
+  "decision_package": "docs/production/decisions/boardtrace-production-decision-package.v1.0-pilot.json",
+  "approved_static_configuration": {
+    "provider": "Hetzner Cloud",
+    "project_name": "BoardTrace Pilot",
+    "region": "nbg1",
+    "server_name": "boardtrace-pilot-01",
+    "server_plan": "CX33",
+    "os_image": "ubuntu-24.04",
+    "architecture": "x86_64",
+    "server_count": 1,
+    "server_labels": { "application": "boardtrace", "environment": "production-pilot" },
+    "network_assumptions": "single public VPS; application services share a Docker private network",
+    "public_tcp_ports": [80, 443, 48227],
+    "private_or_local_only_services": [
+      "PostgreSQL",
+      "Redis",
+      "Celery worker",
+      "Dozzle",
+      "Uptime Kuma",
+      "Docker daemon"
+    ],
+    "hostname": "boardtrace.duckdns.org",
+    "tls_target": "boardtrace.duckdns.org",
+    "image_repository": "ghcr.io/mustafabedirr/boardtrace",
+    "image_tag_policy": "explicit immutable version and digest required; latest prohibited",
+    "backup_provider": "Cloudflare R2",
+    "backup_bucket": "boardtrace-pilot-backups",
+    "backup_retention_days": 30,
+    "backup_encryption": "age before upload",
+    "age_private_key_location": "OFF_HOST_ONLY",
+    "monitoring_services": ["Uptime Kuma", "Dozzle via SSH tunnel", "Telegram alerts"],
+    "telegram_bot_display_name": "BoardTrace Alerts",
+    "telegram_group_display_name": "BoardTrace Pilot",
+    "operator_accounts": [
+      { "person": "Mustafa Bedir", "linux_account": "mustafa", "role": "primary administrator" },
+      { "person": "Ahmet Bedir", "linux_account": "ahmet", "role": "limited recovery operator" }
+    ],
+    "environment_contract": "infrastructure/production/production-environment-contract.json",
+    "deployment_preflight_command": ".\\.venv\\Scripts\\python.exe scripts/production_preflight.py"
+  },
+  "generated_external_resource_identifiers": {
+    "hetzner_server_id": null,
+    "public_ipv4": null,
+    "public_ipv6": null,
+    "r2_account_id": null,
+    "telegram_chat_id": null,
+    "ghcr_image_digest": null,
+    "tls_certificate_serial": null
+  },
+  "required_secret_values": [
+    {
+      "name": "HETZNER_API_TOKEN",
+      "status": "NOT_PROVIDED",
+      "storage": "secure operator environment"
+    },
+    {
+      "name": "DUCKDNS_TOKEN",
+      "status": "NOT_PROVIDED",
+      "storage": "root-only production secret file"
+    },
+    {
+      "name": "BOARDTRACE_TELEGRAM_BOT_TOKEN",
+      "status": "NOT_PROVIDED",
+      "storage": "root-only production secret file"
+    },
+    {
+      "name": "BOARDTRACE_R2_ACCESS_KEY_ID",
+      "status": "NOT_PROVIDED",
+      "storage": "root-only production secret file"
+    },
+    {
+      "name": "BOARDTRACE_R2_SECRET_ACCESS_KEY",
+      "status": "NOT_PROVIDED",
+      "storage": "root-only production secret file"
+    },
+    {
+      "name": "BOARDTRACE_GHCR_TOKEN",
+      "status": "NOT_PROVIDED",
+      "storage": "root-only production secret file"
+    },
+    {
+      "name": "BOARDTRACE_JWT_SIGNING_SECRET",
+      "status": "NOT_PROVIDED",
+      "storage": "root-only production secret file"
+    },
+    {
+      "name": "BOARDTRACE_REFRESH_TOKEN_PEPPER",
+      "status": "NOT_PROVIDED",
+      "storage": "root-only production secret file"
+    },
+    {
+      "name": "AGE_PRIVATE_KEY",
+      "status": "NOT_PROVIDED",
+      "storage": "off-host recovery custody only"
+    }
+  ],
+  "pending_operational_values": [
+    "approved primary SSH public-key fingerprint",
+    "approved secondary SSH public-key fingerprint",
+    "Hetzner deletion-protection confirmation",
+    "optional IPv6 enablement decision",
+    "immutable GHCR image version and digest",
+    "age public recipient",
+    "real production environment values",
+    "recovery drill timestamp and approvals"
+  ],
+  "validation_results": {
+    "manifest": "PASS",
+    "external_provisioning": "BLOCKED_MODE_A",
+    "host_hardening": "READY_FOR_HOST_VERIFICATION",
+    "secondary_operator": "READY_FOR_PROVISIONING",
+    "production_preflight": "BLOCKED_REAL_VALUES_ABSENT",
+    "external_mutation_count": 0
+  }
+}

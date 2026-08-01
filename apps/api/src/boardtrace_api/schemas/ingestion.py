@@ -8,6 +8,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from boardtrace_api.models.enums import AnalysisJobStatus, GameResult, GameStatus, PlayerColor
 
 UCI_MOVE_PATTERN = r"^[a-h][1-8][a-h][1-8][qrbn]?$"
+QueueState = Literal["ACTIVE", "WAITING", "CONSENT_REQUIRED", "TERMINAL"]
+QueueActionState = Literal["ACTIVE", "WAITING", "CANCELLED"]
 
 
 class CompletedGameIngestionRequest(BaseModel):
@@ -16,6 +18,10 @@ class CompletedGameIngestionRequest(BaseModel):
     idempotency_key: str = Field(pattern=r"^[a-f0-9]{64}$")
     platform: str = Field(min_length=1, max_length=100)
     source_game_id: str = Field(min_length=1, max_length=200)
+    acquisition_method: Literal["browser_extension"] = "browser_extension"
+    source_checksum: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$", repr=False)
+    manual_retry: bool = False
+    queue_consent: bool = False
     completed_at: datetime
     player_color: PlayerColor
     result: GameResult
@@ -49,3 +55,16 @@ class IngestionStatusResponse(BaseModel):
     normalized_move_count: int
     analysis_job_id: UUID
     analysis_job_status: AnalysisJobStatus
+    queue_state: QueueState = "ACTIVE"
+    queue_position: int | None = Field(default=None, ge=1, le=3)
+    queue_deadline_at: int | None = Field(default=None, ge=0)
+
+
+class QueueActionResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    analysis_job_id: UUID
+    analysis_job_status: AnalysisJobStatus
+    queue_state: QueueActionState
+    queue_position: int | None = Field(default=None, ge=1, le=3)
+    queue_deadline_at: int | None = Field(default=None, ge=0)
