@@ -8,11 +8,11 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class PublicAnalysisReadiness(StrEnum):
-    NOT_STARTED = "NOT_STARTED"
-    QUEUED = "QUEUED"
-    RUNNING = "RUNNING"
-    READY = "READY"
-    FAILED = "FAILED"
+    UNAVAILABLE = "unavailable"
+    QUEUED = "queued"
+    RUNNING = "running"
+    AVAILABLE = "available"
+    FAILED = "failed"
 
 
 class PublicPollingGuidance(BaseModel):

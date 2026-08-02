@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
@@ -70,10 +71,12 @@ async def _running_job(session: AsyncSession, generation: int = 1) -> AnalysisJo
         completion_verified_at=datetime.now(UTC),
         normalized_moves=["e2e4", "e7e5"],
         source_game_id=str(uuid4()),
+        ingestion_payload_hash=uuid4().hex + uuid4().hex,
     )
     session.add(game)
     await session.flush()
     job = AnalysisJob(
+        admission_correlation_id=uuid4(),
         game_id=game.id,
         owner_user_id=user.id,
         position_id=None,
@@ -86,6 +89,7 @@ async def _running_job(session: AsyncSession, generation: int = 1) -> AnalysisJo
         analysis_version=1,
         lease_generation=generation,
         worker_id="worker-a",
+        lease_expires_at=datetime.now(UTC) + timedelta(minutes=5),
     )
     session.add(job)
     await session.commit()
@@ -207,10 +211,14 @@ async def test_worker_finalization_atomically_persists_and_completes_job(
     )
 
     await auth_database_session.refresh(job)
+    game = await auth_database_session.get(Game, job.game_id)
+    assert game is not None
     assert run.analysis_job_id == job.id
     assert job.status is AnalysisJobStatus.SUCCEEDED
     assert job.worker_id is None
     assert job.completed_at == now + timedelta(seconds=1)
+    assert game.status is GameStatus.ANALYSIS_AVAILABLE
+    assert game.analysis_available_at == now + timedelta(seconds=1)
     assert await auth_database_session.scalar(select(func.count(AnalysisRun.id))) == 1
 
 
@@ -239,8 +247,233 @@ async def test_worker_finalization_rolls_back_result_and_completion_together(
         )
 
     await auth_database_session.refresh(job)
+    game = await auth_database_session.get(Game, job.game_id)
+    assert game is not None
     assert job.status is AnalysisJobStatus.RUNNING
     assert job.worker_id == "worker-a"
+    assert await auth_database_session.scalar(select(func.count(AnalysisRun.id))) == 0
+    assert game.status is GameStatus.FINISHED
+    assert game.analysis_available_at is None
+
+
+@pytest.mark.asyncio
+async def test_worker_finalization_is_idempotent_for_exact_available_generation(
+    auth_database_session: AsyncSession,
+) -> None:
+    job = await _running_job(auth_database_session)
+    now = datetime.now(UTC)
+    service = AnalysisResultPersistenceService(auth_database_session)
+
+    first = await service.persist_and_complete_owned_generation(
+        job_id=job.id,
+        worker_id="worker-a",
+        lease_generation=job.lease_generation,
+        result=_result(job.game_id),
+        configuration=_configuration(),
+        started_at=now,
+        finished_at=now + timedelta(seconds=1),
+    )
+    second = await service.persist_and_complete_owned_generation(
+        job_id=job.id,
+        worker_id="worker-a",
+        lease_generation=job.lease_generation,
+        result=_result(job.game_id, score_offset=999),
+        configuration=_configuration(),
+        started_at=now,
+        finished_at=now + timedelta(seconds=2),
+    )
+
+    game = await auth_database_session.get(Game, job.game_id)
+    assert game is not None
+    assert first.id == second.id
+    assert game.status is GameStatus.ANALYSIS_AVAILABLE
+    assert game.analysis_available_at == now + timedelta(seconds=1)
+    assert await auth_database_session.scalar(select(func.count(AnalysisRun.id))) == 1
+    assert (
+        await auth_database_session.scalar(select(func.count(AnalysisPositionEvaluation.id))) == 3
+    )
+    assert await auth_database_session.scalar(select(func.count(AnalysisMoveEvaluation.id))) == 2
+
+
+@pytest.mark.asyncio
+async def test_availability_audit_occurs_after_commit_and_observer_failure_is_isolated(
+    auth_database_session: AsyncSession,
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    job = await _running_job(auth_database_session)
+    now = datetime.now(UTC)
+
+    async def assert_event_not_emitted_before_commit() -> None:
+        assert all(
+            record.message != "analysis_availability_transitioned" for record in caplog.records
+        )
+
+    with caplog.at_level(logging.INFO, logger="boardtrace_api.analysis"):
+        await AnalysisResultPersistenceService(
+            auth_database_session
+        ).persist_and_complete_owned_generation(
+            job_id=job.id,
+            worker_id="worker-a",
+            lease_generation=job.lease_generation,
+            result=_result(job.game_id),
+            configuration=_configuration(),
+            started_at=now,
+            finished_at=now,
+            before_commit=assert_event_not_emitted_before_commit,
+        )
+    assert [
+        record.message
+        for record in caplog.records
+        if record.message == "analysis_availability_transitioned"
+    ] == ["analysis_availability_transitioned"]
+
+    repeated_job = await _running_job(auth_database_session)
+    repeated_game_id = repeated_job.game_id
+
+    def reject_observer(_event: str, **_context: object) -> None:
+        raise RuntimeError("injected observer failure")
+
+    monkeypatch.setattr(
+        "boardtrace_api.analysis.observability.audit_event",
+        reject_observer,
+    )
+    await AnalysisResultPersistenceService(
+        auth_database_session
+    ).persist_and_complete_owned_generation(
+        job_id=repeated_job.id,
+        worker_id="worker-a",
+        lease_generation=repeated_job.lease_generation,
+        result=_result(repeated_game_id),
+        configuration=_configuration(),
+        started_at=now,
+        finished_at=now,
+    )
+    persisted_game = await auth_database_session.get(Game, repeated_game_id)
+    assert persisted_game is not None
+    assert persisted_game.status is GameStatus.ANALYSIS_AVAILABLE
+    assert persisted_game.analysis_available_at == now
+
+
+@pytest.mark.asyncio
+async def test_worker_finalization_rejects_ineligible_game_and_rolls_back_everything(
+    auth_database_session: AsyncSession,
+) -> None:
+    job = await _running_job(auth_database_session)
+    game = await auth_database_session.get(Game, job.game_id)
+    assert game is not None
+    game.ingestion_payload_hash = None
+    await auth_database_session.commit()
+    now = datetime.now(UTC)
+
+    with pytest.raises(
+        AnalysisRunAuthorityError,
+        match="completed generation does not own analysis availability",
+    ):
+        await AnalysisResultPersistenceService(
+            auth_database_session
+        ).persist_and_complete_owned_generation(
+            job_id=job.id,
+            worker_id="worker-a",
+            lease_generation=job.lease_generation,
+            result=_result(job.game_id),
+            configuration=_configuration(),
+            started_at=now,
+            finished_at=now,
+        )
+
+    await auth_database_session.refresh(job)
+    await auth_database_session.refresh(game)
+    assert job.status is AnalysisJobStatus.RUNNING
+    assert game.status is GameStatus.FINISHED
+    assert game.analysis_available_at is None
+    assert await auth_database_session.scalar(select(func.count(AnalysisRun.id))) == 0
+
+
+@pytest.mark.asyncio
+async def test_worker_finalization_rejects_expired_lease_without_availability(
+    auth_database_session: AsyncSession,
+) -> None:
+    job = await _running_job(auth_database_session)
+    now = datetime.now(UTC)
+    job.lease_expires_at = now - timedelta(seconds=1)
+    await auth_database_session.commit()
+    job_id = job.id
+    game_id = job.game_id
+    generation = job.lease_generation
+
+    with pytest.raises(AnalysisRunAuthorityError, match="worker does not own"):
+        await AnalysisResultPersistenceService(
+            auth_database_session
+        ).persist_and_complete_owned_generation(
+            job_id=job_id,
+            worker_id="worker-a",
+            lease_generation=generation,
+            result=_result(game_id),
+            configuration=_configuration(),
+            started_at=now - timedelta(seconds=2),
+            finished_at=now,
+        )
+
+    game = await auth_database_session.get(Game, game_id)
+    persisted_job = await auth_database_session.get(AnalysisJob, job_id)
+    assert game is not None
+    assert persisted_job is not None
+    assert persisted_job.status is AnalysisJobStatus.RUNNING
+    assert game.status is GameStatus.FINISHED
+    assert game.analysis_available_at is None
+    assert await auth_database_session.scalar(select(func.count(AnalysisRun.id))) == 0
+
+
+@pytest.mark.asyncio
+async def test_worker_finalization_rejects_superseded_job_and_keeps_game_private(
+    auth_database_session: AsyncSession,
+) -> None:
+    job = await _running_job(auth_database_session)
+    newer = AnalysisJob(
+        admission_correlation_id=uuid4(),
+        game_id=job.game_id,
+        owner_user_id=job.owner_user_id,
+        position_id=None,
+        job_type=AnalysisJobType.REPORT,
+        status=AnalysisJobStatus.PENDING,
+        attempts=0,
+        attempt_count=0,
+        max_attempts=3,
+        analysis_profile="standard",
+        analysis_version=2,
+        lease_generation=0,
+    )
+    auth_database_session.add(newer)
+    await auth_database_session.commit()
+    job_id = job.id
+    game_id = job.game_id
+    generation = job.lease_generation
+    now = datetime.now(UTC)
+
+    with pytest.raises(
+        AnalysisRunAuthorityError,
+        match="completed generation does not own analysis availability",
+    ):
+        await AnalysisResultPersistenceService(
+            auth_database_session
+        ).persist_and_complete_owned_generation(
+            job_id=job_id,
+            worker_id="worker-a",
+            lease_generation=generation,
+            result=_result(game_id),
+            configuration=_configuration(),
+            started_at=now,
+            finished_at=now,
+        )
+
+    game = await auth_database_session.get(Game, game_id)
+    persisted_job = await auth_database_session.get(AnalysisJob, job_id)
+    assert game is not None
+    assert persisted_job is not None
+    assert persisted_job.status is AnalysisJobStatus.RUNNING
+    assert game.status is GameStatus.FINISHED
+    assert game.analysis_available_at is None
     assert await auth_database_session.scalar(select(func.count(AnalysisRun.id))) == 0
 
 

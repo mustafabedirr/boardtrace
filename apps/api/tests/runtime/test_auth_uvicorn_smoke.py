@@ -6,6 +6,8 @@ import sys
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass, field
+from threading import Thread
 from typing import cast
 
 import httpx
@@ -22,6 +24,52 @@ TEST_JWT_SECRET = "test-jwt-signing-secret-with-adequate-length"
 TEST_REFRESH_PEPPER = "test-refresh-token-pepper"
 
 
+@dataclass
+class DrainedUvicornProcess:
+    """Continuously drains Uvicorn output while retaining it for assertions."""
+
+    process: subprocess.Popen[str]
+    _output: list[str] = field(default_factory=list)
+    _reader: Thread = field(init=False)
+
+    def __post_init__(self) -> None:
+        self._reader = Thread(target=self._drain, name="uvicorn-output-drain", daemon=True)
+        self._reader.start()
+
+    @property
+    def returncode(self) -> int | None:
+        return self.process.returncode
+
+    def poll(self) -> int | None:
+        return self.process.poll()
+
+    def send_signal(self, signal_number: int) -> None:
+        self.process.send_signal(signal_number)
+
+    def wait(self, timeout: float | None = None) -> int:
+        return self.process.wait(timeout=timeout)
+
+    def kill(self) -> None:
+        self.process.kill()
+
+    def communicate(self, timeout: float | None = None) -> tuple[str, None]:
+        self.process.wait(timeout=timeout)
+        self._reader.join(timeout=timeout)
+        if self._reader.is_alive():
+            if timeout is None:
+                raise RuntimeError("Uvicorn output drain did not finish")
+            raise subprocess.TimeoutExpired(self.process.args, timeout)
+        if self.process.stdout is not None:
+            self.process.stdout.close()
+        return "".join(self._output), None
+
+    def _drain(self) -> None:
+        output = self.process.stdout
+        if output is None:
+            return
+        self._output.extend(iter(output.readline, ""))
+
+
 def unused_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as socket_handle:
         socket_handle.bind(("127.0.0.1", 0))
@@ -31,7 +79,7 @@ def unused_port() -> int:
 @contextmanager
 def uvicorn_process(
     database_url: str, extra_environment: dict[str, str] | None = None
-) -> Iterator[tuple[subprocess.Popen[str], str]]:
+) -> Iterator[tuple[DrainedUvicornProcess, str]]:
     port = unused_port()
     environment = (
         os.environ
@@ -44,25 +92,27 @@ def uvicorn_process(
         | (extra_environment or {})
     )
     creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
-    process = subprocess.Popen(
-        [
-            sys.executable,
-            "-m",
-            "uvicorn",
-            "boardtrace_api.main:app",
-            "--host",
-            "127.0.0.1",
-            "--port",
-            str(port),
-            "--log-level",
-            "info",
-        ],
-        cwd="apps/api",
-        env=environment,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        creationflags=creationflags,
+    process = DrainedUvicornProcess(
+        subprocess.Popen(
+            [
+                sys.executable,
+                "-m",
+                "uvicorn",
+                "boardtrace_api.main:app",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                str(port),
+                "--log-level",
+                "info",
+            ],
+            cwd="apps/api",
+            env=environment,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            creationflags=creationflags,
+        )
     )
     try:
         yield process, f"http://127.0.0.1:{port}"
@@ -77,9 +127,10 @@ def uvicorn_process(
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait(timeout=10)
+        process.communicate(timeout=1)
 
 
-def wait_for_ready(client: httpx.Client, base_url: str, process: subprocess.Popen[str]) -> None:
+def wait_for_ready(client: httpx.Client, base_url: str, process: DrainedUvicornProcess) -> None:
     deadline = time.monotonic() + 15
     while time.monotonic() < deadline:
         if process.poll() is not None:

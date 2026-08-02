@@ -12,12 +12,17 @@ from boardtrace_api.models import (
     AnalysisMoveEvaluation,
     AnalysisPositionEvaluation,
     AnalysisRun,
+    Game,
 )
-from boardtrace_api.models.enums import AnalysisJobStatus, AnalysisJobType
+from boardtrace_api.models.enums import AnalysisJobStatus, AnalysisJobType, GameStatus
 from boardtrace_api.services.analysis_aggregates import (
     InternalAnalysisAggregateCompositionError,
     InternalAnalysisAggregateService,
     validate_internal_analysis_aggregate,
+)
+from boardtrace_api.services.analysis_delivery import (
+    PublicAnalysisUnavailableError,
+    map_public_analysis,
 )
 from boardtrace_api.services.analysis_facade import (
     InternalAnalysisReadFacade,
@@ -138,6 +143,10 @@ async def test_facade_selects_only_current_authoritative_run_without_layer_mixin
     auth_database_session: AsyncSession,
 ) -> None:
     old_job, old_run = await _completed_snapshot(auth_database_session)
+    game = await auth_database_session.get(Game, old_job.game_id)
+    assert game is not None
+    game.status = GameStatus.DEEP_ANALYSIS_RUNNING
+    game.analysis_available_at = None
     current_job = AnalysisJob(
         game_id=old_job.game_id,
         owner_user_id=old_job.owner_user_id,
@@ -151,6 +160,7 @@ async def test_facade_selects_only_current_authoritative_run_without_layer_mixin
         analysis_version=2,
         lease_generation=1,
         worker_id="worker-current",
+        lease_expires_at=datetime.now(UTC) + timedelta(minutes=5),
     )
     auth_database_session.add(current_job)
     await auth_database_session.commit()
@@ -250,3 +260,26 @@ async def test_cross_layer_move_linkage_tampering_fails_closed(
         validate_internal_analysis_aggregate(
             replace(result, classifications=reversed_classifications)
         )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("linkage", ["missing", "duplicate"])
+async def test_public_projection_rejects_missing_or_duplicate_ply_linkage(
+    linkage: str,
+    auth_database_session: AsyncSession,
+) -> None:
+    job, _ = await _completed_snapshot(auth_database_session)
+    aggregate = await InternalAnalysisAggregateService(auth_database_session).read_for_owner(
+        job.game_id, job.owner_user_id
+    )
+    persisted = aggregate.snapshot.analysis.result.move_evaluations
+    tampered_moves = persisted[1:] if linkage == "missing" else (persisted[0], persisted[0])
+    tampered_result = replace(
+        aggregate.snapshot.analysis.result,
+        move_evaluations=tampered_moves,
+    )
+    tampered_analysis = replace(aggregate.snapshot.analysis, result=tampered_result)
+    tampered_snapshot = replace(aggregate.snapshot, analysis=tampered_analysis)
+
+    with pytest.raises(PublicAnalysisUnavailableError, match="move linkage"):
+        map_public_analysis(replace(aggregate, snapshot=tampered_snapshot))

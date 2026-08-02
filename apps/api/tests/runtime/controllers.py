@@ -202,7 +202,9 @@ class CeleryWorkerController:
             return ""
         if self.process.poll() is None:
             return ""
-        return self.process.communicate(timeout=1)[0]
+        output = self.process.communicate(timeout=1)[0]
+        self.process.stdout.close()
+        return output
 
     def assert_not_running(self) -> None:
         if self.process is not None and self.process.poll() is None:

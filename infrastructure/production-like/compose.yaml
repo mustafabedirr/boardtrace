@@ -88,6 +88,7 @@ services:
         "boardtrace_api.worker.celery_app",
         "worker",
         "--beat",
+        "--schedule=/tmp/boardtrace-celerybeat-schedule",
         "--loglevel=INFO",
         "--concurrency=2",
       ]
@@ -121,7 +122,7 @@ services:
       interval: 3s
       timeout: 5s
       retries: 30
-    networks: [boardtrace]
+    networks: [boardtrace, edge]
 
   uptime-kuma:
     image: louislam/uptime-kuma:1
@@ -200,6 +201,7 @@ services:
 networks:
   boardtrace:
     internal: true
+  edge:
 
 volumes:
   postgres-data:

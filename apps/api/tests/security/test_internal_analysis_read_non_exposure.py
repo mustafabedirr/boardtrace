@@ -53,7 +53,9 @@ def test_engine_execution_and_internal_results_remain_backend_only() -> None:
     repository_root = Path(__file__).parents[4]
     api_source = repository_root / "apps" / "api" / "src" / "boardtrace_api"
     client_roots = (
-        repository_root / "apps" / "web",
+        repository_root / "apps" / "web" / "app",
+        repository_root / "apps" / "web" / "components",
+        repository_root / "apps" / "web" / "lib",
         repository_root / "apps" / "extension" / "src",
         repository_root / "packages",
     )

@@ -137,6 +137,7 @@ async def test_request_completion_log_has_context_and_safe_fields() -> None:
     assert payload["method"] == "GET"
     assert payload["path"] == "/api/v1/health/live"
     assert payload["status_code"] == 200
+    assert payload["outcome"] == "success"
     assert isinstance(payload["duration_ms"], float)
     assert payload["environment"] == "development"
 

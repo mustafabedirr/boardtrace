@@ -10,8 +10,8 @@ RUN apt-get update \
 
 WORKDIR /app
 COPY apps/api /app/apps/api
-COPY scripts /app/scripts
 RUN python -m pip install --no-cache-dir /app/apps/api
+COPY scripts /app/scripts
 
 USER 65532:65532
 WORKDIR /app/apps/api

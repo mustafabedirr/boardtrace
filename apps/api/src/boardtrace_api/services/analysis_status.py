@@ -44,7 +44,7 @@ class PublicAnalysisStatusService:
         return PublicAnalysisStatusResponse(
             game_id=authority.game_id,
             readiness=readiness,
-            result_available=readiness is PublicAnalysisReadiness.READY,
+            result_available=readiness is PublicAnalysisReadiness.AVAILABLE,
             polling=_polling_guidance(readiness, authority.job_status),
         )
 
@@ -54,7 +54,7 @@ def map_public_readiness(
 ) -> PublicAnalysisReadiness:
     status = authority.job_status
     if status is None:
-        return PublicAnalysisReadiness.NOT_STARTED
+        return PublicAnalysisReadiness.UNAVAILABLE
     if status in {AnalysisJobStatus.PENDING, AnalysisJobStatus.QUEUED}:
         return PublicAnalysisReadiness.QUEUED
     if status in {AnalysisJobStatus.CLAIMED, AnalysisJobStatus.RUNNING}:
@@ -68,7 +68,7 @@ def map_public_readiness(
         and authority.has_current_complete_run
         and authority.game_status is GameStatus.ANALYSIS_AVAILABLE
     ):
-        return PublicAnalysisReadiness.READY
+        return PublicAnalysisReadiness.AVAILABLE
     return PublicAnalysisReadiness.FAILED
 
 

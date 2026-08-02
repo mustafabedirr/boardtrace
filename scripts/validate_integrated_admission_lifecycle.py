@@ -230,7 +230,7 @@ async def validate() -> None:
         responses.append(waiting)
 
     status, full = _request("/games/ingestions", ingest_tokens[5], _payload(5, consent=True))
-    assert status == 429
+    _expect(status, full, 429)
     assert cast(dict[str, object], full["error"])["code"] == "analysis_queue_full"
 
     cancelled_id = str(responses[3]["analysis_job_id"])

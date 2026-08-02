@@ -54,7 +54,7 @@ async def test_ready_status_is_bounded_and_contains_no_result_or_internal_metada
     assert "Retry-After" not in response.headers
     assert response.json() == {
         "game_id": str(job.game_id),
-        "readiness": "READY",
+        "readiness": "available",
         "result_available": True,
         "polling": {
             "should_retry": False,
@@ -100,7 +100,7 @@ async def test_newer_current_job_prevents_historical_ready_fallback(
     assert response.status_code == 200
     assert response.headers["Retry-After"] == "2"
     payload = response.json()
-    assert payload["readiness"] == "QUEUED"
+    assert payload["readiness"] == "queued"
     assert payload["result_available"] is False
     assert payload["polling"]["should_retry"] is True
     assert payload["polling"]["retry_after_ms"] == 2000
@@ -141,9 +141,9 @@ async def test_retry_lifecycle_is_encapsulated_as_queued_with_existing_delay(
     assert response.status_code == 200
     assert response.headers["Retry-After"] == "5"
     payload = response.json()
-    assert payload["readiness"] == "QUEUED"
+    assert payload["readiness"] == "queued"
     assert payload["polling"]["retry_after_ms"] == 5000
-    assert "RETRY" not in str(payload)
+    assert "RETRY_SCHEDULED" not in str(payload)
 
 
 @pytest.mark.asyncio

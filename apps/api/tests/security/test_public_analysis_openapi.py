@@ -45,6 +45,20 @@ def test_public_analysis_openapi_contains_only_explicit_dto_boundary() -> None:
         }
     )
     assert all(term not in serialized for term in FORBIDDEN_OPENAPI_TERMS)
+    move_schema = document["components"]["schemas"]["PublicMoveAnalysis"]
+    assert "alternative_san" in move_schema["required"]
+    alternative = move_schema["properties"]["alternative_san"]
+    assert alternative["anyOf"] == [{"type": "string"}, {"type": "null"}]
+    assert "ANALYSIS_AVAILABLE" in alternative["description"]
+    assert "after_position_centipawns" in move_schema["required"]
+    field = move_schema["properties"]["after_position_centipawns"]
+    assert field["anyOf"] == [{"type": "integer"}, {"type": "null"}]
+    assert field["description"] == (
+        "Centipawn evaluation of the position after this move, from the perspective "
+        "of the side to move in that resulting position. Positive values favor that "
+        "side and negative values disfavor it. Null when no public centipawn value "
+        "is available."
+    )
 
 
 def test_public_schema_has_no_internal_domain_imports() -> None:

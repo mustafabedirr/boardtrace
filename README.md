@@ -67,6 +67,11 @@ uv run --project apps/api uvicorn boardtrace_api.main:app --host 127.0.0.1 --por
 
 Available foundation endpoints are `/api/v1/health/live`, `/api/v1/health/ready`, `/openapi.json`, and `/docs`.
 
+Production processes, required environment variables, deployment order, network
+boundaries, and operational ownership are defined in the
+[production readiness contract](docs/operations/production-readiness.md). The
+repository does not provide or perform an internet-facing deployment.
+
 ## Development tooling
 
 BoardTrace uses pnpm 11.11.0 for JavaScript and TypeScript tooling and uv for Python tooling. Install [pnpm](https://pnpm.io/installation) and [uv](https://docs.astral.sh/uv/getting-started/installation/) before running local quality checks.
@@ -109,14 +114,21 @@ uv run pytest --cov
 
 ## Chrome extension foundation
 
-`apps/extension` contains the Manifest V3 capture foundation. Build it with
-`pnpm --filter @boardtrace/extension build`, then load its `dist` directory as
-an unpacked extension in Chrome. The action injects capture code only for the
-active tab after a user click; it has no host permissions or persistent local
-capture storage. Its current observer supports BoardTrace-prefixed raw board
-attributes only—site adapters, image capture, move inference, and transport
-are intentionally outside this phase. See
-[extension capture guardrails](docs/security/extension-capture-guardrails.md).
+`apps/extension` contains the Manifest V3 local Lichess integration. Build it
+against the local API, then load `apps/extension/dist` as an unpacked extension:
+
+```powershell
+$env:BOARDTRACE_EXTENSION_API_BASE_URL='http://127.0.0.1:18080'
+pnpm --filter @boardtrace/extension build --mode development
+```
+
+The generated manifest grants host access only to the configured API origin.
+The popup pairs with an existing local account, connects to a user-selected
+Lichess tab, remains analysis-free during live play, and renders the minimized
+post-game result only after server release. Tokens and results remain in
+service-worker memory. See the
+[extension capture guardrails](docs/security/extension-capture-guardrails.md)
+and [local validation checklist](docs/operations/local-lichess-extension-validation-r6-l2.md).
 
 ## Security and fair play
 

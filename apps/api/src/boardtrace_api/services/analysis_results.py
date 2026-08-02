@@ -14,6 +14,7 @@ from boardtrace_api.analysis.full_game import (
     FullGameAnalysisResult,
     FullGameAnalysisStatus,
 )
+from boardtrace_api.analysis.observability import audit_event_safely
 from boardtrace_api.analysis.stockfish import StockfishScore
 from boardtrace_api.db.transactions import (
     BeforeCommitHook,
@@ -28,6 +29,7 @@ from boardtrace_api.repositories.analysis_results import (
     AnalysisResultRepository,
     AnalysisRunAuthorityError,
 )
+from boardtrace_api.services.analysis_cleanup import TerminalGameDataCleanup, record_cleanup
 
 
 class PersistedAnalysisReadError(RuntimeError):
@@ -210,7 +212,17 @@ class AnalysisResultPersistenceService:
         if finished_at < started_at:
             raise ValueError("analysis finish time cannot precede start time")
 
+        transitioned = False
+        cleaned = False
+
         async def persist_and_complete() -> AnalysisRun:
+            nonlocal cleaned, transitioned
+            existing = await self._repository.get_idempotent_available_generation(
+                job_id=job_id,
+                lease_generation=lease_generation,
+            )
+            if existing is not None:
+                return existing
             run = await self._repository.replace_owned_generation(
                 job_id=job_id,
                 worker_id=worker_id,
@@ -225,9 +237,24 @@ class AnalysisResultPersistenceService:
             )
             if not completed:
                 raise AnalysisRunAuthorityError("job completion authority was lost")
+            await self._repository.make_owned_generation_available(
+                run=run,
+                job_id=job_id,
+                lease_generation=lease_generation,
+                available_at=finished_at,
+            )
+            cleaned = await TerminalGameDataCleanup(self._session).delete_for_job(job_id)
+            transitioned = True
             return run
 
-        return await TransactionBoundary(self._session, before_commit).execute(persist_and_complete)
+        run = await TransactionBoundary(self._session, before_commit).execute(persist_and_complete)
+        audit_event_safely(
+            "analysis_availability_transitioned",
+            job_id=str(job_id),
+            outcome="transitioned" if transitioned else "idempotent",
+        )
+        record_cleanup(job_id, "deleted" if cleaned else "already_absent")
+        return run
 
     async def read_generation(
         self, job_id: UUID, lease_generation: int

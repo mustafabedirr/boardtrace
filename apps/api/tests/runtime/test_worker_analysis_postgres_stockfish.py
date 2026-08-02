@@ -14,7 +14,7 @@ from boardtrace_api import worker as worker_module
 from boardtrace_api.analysis.queue import AnalysisTaskPayload
 from boardtrace_api.config import Settings
 from boardtrace_api.models import AnalysisJob, AnalysisRun, Game
-from boardtrace_api.models.enums import AnalysisJobStatus
+from boardtrace_api.models.enums import AnalysisJobStatus, GameStatus
 from boardtrace_api.repositories.analysis_jobs import AnalysisJobRepository
 from boardtrace_api.services.analysis_jobs import AnalysisJobService
 from tests.integration.test_analysis_job_orchestration import completed_game
@@ -31,7 +31,7 @@ def _stockfish_path() -> str:
 
 
 @pytest.mark.asyncio
-async def test_worker_real_stockfish_persists_then_completes_without_release(
+async def test_worker_real_stockfish_atomically_persists_completes_and_releases(
     auth_database_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     game = await completed_game(auth_database_session)
@@ -69,5 +69,7 @@ async def test_worker_real_stockfish_persists_then_completes_without_release(
     persisted_game = await auth_database_session.get(Game, game_id)
     assert outcome == "completed"
     assert persisted_job is not None and persisted_job.status is AnalysisJobStatus.SUCCEEDED
-    assert persisted_game is not None and persisted_game.analysis_available_at is None
+    assert persisted_game is not None
+    assert persisted_game.status is GameStatus.ANALYSIS_AVAILABLE
+    assert persisted_game.analysis_available_at is not None
     assert await auth_database_session.scalar(select(func.count(AnalysisRun.id))) == 1

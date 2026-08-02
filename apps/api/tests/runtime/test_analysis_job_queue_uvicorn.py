@@ -34,13 +34,19 @@ pytestmark = [
 
 
 @contextmanager
-def celery_worker_process(database_url: str) -> Iterator[subprocess.Popen[str]]:
-    environment = os.environ | {
-        "BOARDTRACE_DATABASE_URL": database_url,
-        "BOARDTRACE_JWT_SIGNING_SECRET": TEST_JWT_SECRET,
-        "BOARDTRACE_REFRESH_TOKEN_PEPPER": TEST_REFRESH_PEPPER,
-        "BOARDTRACE_LOG_FORMAT": "console",
-    }
+def celery_worker_process(
+    database_url: str, extra_environment: dict[str, str] | None = None
+) -> Iterator[subprocess.Popen[str]]:
+    environment = (
+        os.environ
+        | {
+            "BOARDTRACE_DATABASE_URL": database_url,
+            "BOARDTRACE_JWT_SIGNING_SECRET": TEST_JWT_SECRET,
+            "BOARDTRACE_REFRESH_TOKEN_PEPPER": TEST_REFRESH_PEPPER,
+            "BOARDTRACE_LOG_FORMAT": "console",
+        }
+        | (extra_environment or {})
+    )
     creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
     process = subprocess.Popen(
         [
@@ -53,6 +59,9 @@ def celery_worker_process(database_url: str) -> Iterator[subprocess.Popen[str]]:
             "--pool=solo",
             "--loglevel=WARNING",
             "--hostname=boardtrace-runtime@%h",
+            "--without-gossip",
+            "--without-mingle",
+            "--without-heartbeat",
         ],
         cwd="apps/api",
         env=environment,
@@ -85,6 +94,8 @@ def celery_worker_process(database_url: str) -> Iterator[subprocess.Popen[str]]:
                 process.kill()
                 process.wait(timeout=10)
         process.communicate(timeout=1)
+        if process.stdout is not None:
+            process.stdout.close()
 
 
 def wait_for_job_status(
@@ -103,15 +114,46 @@ def wait_for_job_status(
 
 
 def test_analysis_job_queue_runtime_smoke(auth_database_session: AsyncSession) -> None:
+    run_analysis_job_queue_smoke()
+
+
+def test_analysis_job_queue_production_mode_smoke(
+    auth_database_session: AsyncSession,
+) -> None:
+    stockfish_path = os.environ.get("BOARDTRACE_TEST_STOCKFISH_PATH")
+    if stockfish_path is None:
+        pytest.fail("Production-mode runtime smoke requires the configured Stockfish fixture")
+    run_analysis_job_queue_smoke(
+        extra_environment={
+            "BOARDTRACE_ENVIRONMENT": "production",
+            "BOARDTRACE_CORS_ALLOWED_ORIGINS": '["https://web.example.test"]',
+            "BOARDTRACE_JWT_SIGNING_SECRET": "production-smoke-signing-secret-value",
+            "BOARDTRACE_LOG_FORMAT": "json",
+            "BOARDTRACE_REDIS_URL": "redis://127.0.0.1:6379/0",
+            "BOARDTRACE_REFRESH_TOKEN_PEPPER": "production-smoke-refresh-pepper-value",
+            "BOARDTRACE_STOCKFISH_PATH": stockfish_path,
+            "BOARDTRACE_TRUSTED_HOSTS": '["api.example.test"]',
+        },
+        host="api.example.test",
+    )
+
+
+def run_analysis_job_queue_smoke(
+    extra_environment: dict[str, str] | None = None,
+    host: str | None = None,
+) -> None:
     database_url = get_test_database_url()
     with (
-        celery_worker_process(database_url) as worker,
-        uvicorn_process(database_url) as (
+        celery_worker_process(database_url, extra_environment) as worker,
+        uvicorn_process(database_url, extra_environment) as (
             server,
             base_url,
         ),
     ):
-        with httpx.Client(timeout=5) as client:
+        with httpx.Client(
+            timeout=5,
+            headers={} if host is None else {"Host": host},
+        ) as client:
             wait_for_ready(client, base_url, server)
             owner = client.post(
                 f"{base_url}{AUTH_PREFIX}/register",

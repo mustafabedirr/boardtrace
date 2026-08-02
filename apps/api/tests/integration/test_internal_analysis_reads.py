@@ -120,6 +120,7 @@ async def test_newer_nonterminal_job_blocks_fallback_to_old_complete_run(
 ) -> None:
     old_job, _ = await _completed_snapshot(auth_database_session)
     newer = AnalysisJob(
+        admission_correlation_id=uuid4(),
         game_id=old_job.game_id,
         owner_user_id=old_job.owner_user_id,
         position_id=None,

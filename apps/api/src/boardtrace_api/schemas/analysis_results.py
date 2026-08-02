@@ -4,7 +4,7 @@ from decimal import Decimal
 from enum import StrEnum
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class PublicMoveColor(StrEnum):
@@ -33,6 +33,21 @@ class PublicMoveAnalysis(PublicAnalysisDto):
     mover: PublicMoveColor
     quality: PublicMoveQuality
     centipawn_loss: int | None
+    alternative_san: str | None = Field(
+        description=(
+            "Server-authorized best alternative in SAN after game completion, or null when "
+            "the played move matched the engine choice. This field is unavailable before "
+            "ANALYSIS_AVAILABLE."
+        )
+    )
+    after_position_centipawns: int | None = Field(
+        description=(
+            "Centipawn evaluation of the position after this move, from the perspective "
+            "of the side to move in that resulting position. Positive values favor that "
+            "side and negative values disfavor it. Null when no public centipawn value "
+            "is available."
+        )
+    )
 
 
 class PublicMoveQualityCount(PublicAnalysisDto):

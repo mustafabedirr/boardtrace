@@ -8,8 +8,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from boardtrace_api.analysis.game_metrics import PlayerAnalyticalSummary
 from boardtrace_api.analysis.move_classification import MoveQuality
+from boardtrace_api.analysis.observability import audit_event_safely
 from boardtrace_api.models import Game
 from boardtrace_api.models.enums import GameStatus
+from boardtrace_api.repositories.analysis_results import AnalysisResultRepository
 from boardtrace_api.schemas.analysis_results import (
     PublicGameAnalysisResponse,
     PublicMoveAnalysis,
@@ -24,6 +26,7 @@ from boardtrace_api.services.analysis_facade import (
     compose_internal_analysis_read_facade,
 )
 from boardtrace_api.services.analysis_reads import InternalAnalysisReadError
+from boardtrace_api.services.analysis_results import PersistedMoveEvaluation
 
 
 class PublicAnalysisReadError(RuntimeError):
@@ -68,7 +71,21 @@ class PublicAnalysisReadService:
             aggregate = await self._facade.read_for_owner(game_id, requesting_user_id)
         except InternalAnalysisReadError as error:
             raise PublicAnalysisUnavailableError("released analysis is unavailable") from error
-        return map_public_analysis(aggregate)
+        response = map_public_analysis(aggregate)
+        consumed = await AnalysisResultRepository(self._session).consume_public_generation(
+            aggregate.snapshot.analysis.run_id,
+            game_id,
+        )
+        if not consumed:
+            await self._session.rollback()
+            raise PublicAnalysisNotFoundError("released analysis was already consumed")
+        await self._session.commit()
+        audit_event_safely(
+            "analysis_session_result_consumed",
+            game_id=str(game_id),
+            outcome="deleted_after_delivery",
+        )
+        return response
 
 
 def compose_public_analysis_read_service(session: AsyncSession) -> PublicAnalysisReadService:
@@ -81,20 +98,39 @@ def compose_public_analysis_read_service(session: AsyncSession) -> PublicAnalysi
 def map_public_analysis(
     aggregate: UnifiedInternalAnalysisAggregate,
 ) -> PublicGameAnalysisResponse:
-    moves = tuple(
-        PublicMoveAnalysis(
-            ply=classified.metric.ply,
-            move_uci=classified.metric.move_uci,
-            move_san=classified.metric.move_san,
-            mover=_color(classified.metric.mover),
-            quality=PublicMoveQuality(classified.quality.value),
-            centipawn_loss=classified.metric.centipawn_loss,
+    persisted_moves_by_ply = _persisted_moves_by_ply(aggregate)
+    board = chess.Board()
+    public_moves: list[PublicMoveAnalysis] = []
+    for classified in aggregate.classifications.moves:
+        persisted = _linked_persisted_move(
+            classified.metric.ply,
+            classified.metric.move_uci,
+            classified.metric.move_san,
+            persisted_moves_by_ply,
         )
-        for classified in aggregate.classifications.moves
-    )
+        if board.turn != classified.metric.mover:
+            raise PublicAnalysisUnavailableError("released analysis mover linkage is invalid")
+        played_move = _legal_move(board, classified.metric.move_uci)
+        if board.san(played_move) != classified.metric.move_san:
+            raise PublicAnalysisUnavailableError("released analysis SAN linkage is invalid")
+        engine_move = _legal_move(board, persisted.before.best_move_uci)
+        alternative_san = None if engine_move == played_move else board.san(engine_move)
+        public_moves.append(
+            PublicMoveAnalysis(
+                ply=classified.metric.ply,
+                move_uci=classified.metric.move_uci,
+                move_san=classified.metric.move_san,
+                mover=_color(classified.metric.mover),
+                quality=PublicMoveQuality(classified.quality.value),
+                centipawn_loss=classified.metric.centipawn_loss,
+                alternative_san=alternative_san,
+                after_position_centipawns=persisted.after.score.centipawns,
+            )
+        )
+        board.push(played_move)
     return PublicGameAnalysisResponse(
         game_id=aggregate.game_id,
-        moves=moves,
+        moves=tuple(public_moves),
         white=_player(aggregate.game_metrics.white),
         black=_player(aggregate.game_metrics.black),
     )
@@ -128,3 +164,43 @@ def _color(color: chess.Color) -> PublicMoveColor:
 
 def _quality(quality: MoveQuality) -> PublicMoveQuality:
     return PublicMoveQuality(quality.value)
+
+
+def _persisted_moves_by_ply(
+    aggregate: UnifiedInternalAnalysisAggregate,
+) -> dict[int, PersistedMoveEvaluation]:
+    persisted_moves = aggregate.snapshot.analysis.result.move_evaluations
+    by_ply = {move.ply: move for move in persisted_moves}
+    if len(by_ply) != len(persisted_moves):
+        raise PublicAnalysisUnavailableError("released analysis move linkage is invalid")
+    return by_ply
+
+
+def _linked_persisted_move(
+    ply: int,
+    move_uci: str,
+    move_san: str,
+    persisted_moves_by_ply: dict[int, PersistedMoveEvaluation],
+) -> PersistedMoveEvaluation:
+    persisted = persisted_moves_by_ply.get(ply)
+    if (
+        persisted is None
+        or persisted.move_uci != move_uci
+        or persisted.move_san != move_san
+        or persisted.before.ply != ply - 1
+        or persisted.after.ply != ply
+    ):
+        raise PublicAnalysisUnavailableError("released analysis move linkage is invalid")
+    return persisted
+
+
+def _legal_move(board: chess.Board, move_uci: str) -> chess.Move:
+    try:
+        move = chess.Move.from_uci(move_uci)
+    except ValueError as error:
+        raise PublicAnalysisUnavailableError(
+            "released analysis move encoding is invalid"
+        ) from error
+    if move not in board.legal_moves:
+        raise PublicAnalysisUnavailableError("released analysis move legality is invalid")
+    return move

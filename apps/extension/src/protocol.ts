@@ -27,27 +27,23 @@ export interface GameContext {
   readonly sourceOrigin: string;
 }
 
-export interface BoardObservation {
-  readonly boardState: string | null;
-  readonly moveText: string | null;
-  readonly observedAt: string;
-  readonly region: BoardRegion;
-}
-
 export interface CaptureStartedMessage {
   readonly context: GameContext;
   readonly region: BoardRegion;
   readonly type: 'capture/started';
 }
 
-export interface BoardObservedMessage {
-  readonly context: GameContext;
-  readonly observation: BoardObservation;
-  readonly type: 'capture/board-observed';
+export interface SelectBoardMessage {
+  readonly type: 'capture/connect-lichess';
 }
 
-export interface SelectBoardMessage {
-  readonly type: 'capture/select-board';
+export interface AdapterStatusMessage {
+  readonly canonicalGameUrl: boolean;
+  readonly hasActiveClock: boolean;
+  readonly moveNodeCount: number;
+  readonly resultDetected: boolean;
+  readonly status: 'TERMINAL_SCORE_NOT_FOUND' | 'MAINLINE_CONVERSION_FAILED';
+  readonly type: 'capture/adapter-status';
 }
 
 export interface CompletedGameMessage {
@@ -58,6 +54,7 @@ export interface CompletedGameMessage {
     readonly initial_fen: null;
     readonly moves: readonly string[];
     readonly manual_retry: false;
+    readonly queue_consent: false;
     readonly platform: string;
     readonly player_color: 'WHITE' | 'BLACK' | 'UNKNOWN';
     readonly result: 'WHITE_WIN' | 'BLACK_WIN' | 'DRAW' | 'UNKNOWN';
@@ -68,7 +65,7 @@ export interface CompletedGameMessage {
 }
 
 export type ExtensionMessage =
-  BoardObservedMessage | CaptureStartedMessage | CompletedGameMessage | SelectBoardMessage;
+  AdapterStatusMessage | CaptureStartedMessage | CompletedGameMessage | SelectBoardMessage;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -100,19 +97,6 @@ function isGameContext(value: unknown): value is GameContext {
   );
 }
 
-function isBoardObservation(value: unknown): value is BoardObservation {
-  if (!isRecord(value) || !hasOnlyKeys(value, ['boardState', 'moveText', 'observedAt', 'region'])) {
-    return false;
-  }
-
-  return (
-    (typeof value.boardState === 'string' || value.boardState === null) &&
-    (typeof value.moveText === 'string' || value.moveText === null) &&
-    typeof value.observedAt === 'string' &&
-    isBoardRegion(value.region)
-  );
-}
-
 function isCompletedGamePayload(value: unknown): boolean {
   if (
     !isRecord(value) ||
@@ -123,6 +107,7 @@ function isCompletedGamePayload(value: unknown): boolean {
       'initial_fen',
       'moves',
       'manual_retry',
+      'queue_consent',
       'platform',
       'player_color',
       'result',
@@ -140,6 +125,7 @@ function isCompletedGamePayload(value: unknown): boolean {
     Array.isArray(value.moves) &&
     value.moves.every((move) => typeof move === 'string') &&
     value.manual_retry === false &&
+    value.queue_consent === false &&
     typeof value.platform === 'string' &&
     (value.player_color === 'WHITE' ||
       value.player_color === 'BLACK' ||
@@ -159,19 +145,32 @@ function isAllowedCaptureMessage(value: unknown): value is ExtensionMessage {
   }
 
   switch (value.type) {
-    case 'capture/select-board':
+    case 'capture/adapter-status':
+      return (
+        hasOnlyKeys(value, [
+          'canonicalGameUrl',
+          'hasActiveClock',
+          'moveNodeCount',
+          'resultDetected',
+          'status',
+          'type',
+        ]) &&
+        typeof value.canonicalGameUrl === 'boolean' &&
+        typeof value.hasActiveClock === 'boolean' &&
+        typeof value.moveNodeCount === 'number' &&
+        Number.isInteger(value.moveNodeCount) &&
+        value.moveNodeCount >= 0 &&
+        typeof value.resultDetected === 'boolean' &&
+        (value.status === 'TERMINAL_SCORE_NOT_FOUND' ||
+          value.status === 'MAINLINE_CONVERSION_FAILED')
+      );
+    case 'capture/connect-lichess':
       return hasOnlyKeys(value, ['type']);
     case 'capture/started':
       return (
         hasOnlyKeys(value, ['context', 'region', 'type']) &&
         isGameContext(value.context) &&
         isBoardRegion(value.region)
-      );
-    case 'capture/board-observed':
-      return (
-        hasOnlyKeys(value, ['context', 'observation', 'type']) &&
-        isGameContext(value.context) &&
-        isBoardObservation(value.observation)
       );
     case 'capture/completed-game':
       return hasOnlyKeys(value, ['payload', 'type']) && isCompletedGamePayload(value.payload);

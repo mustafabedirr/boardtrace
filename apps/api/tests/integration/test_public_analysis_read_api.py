@@ -2,7 +2,7 @@ from uuid import UUID, uuid4
 
 import httpx
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from boardtrace_api.auth.tokens import TokenService
@@ -80,6 +80,7 @@ async def test_owner_reads_released_current_analysis_through_public_dto_only(
     game.status = GameStatus.ANALYSIS_AVAILABLE
     await auth_database_session.commit()
     before = await _counts(auth_database_session)
+    assert before == (1, 3, 2)
 
     response = await auth_client.get(
         f"/api/v1/analysis/games/{job.game_id}",
@@ -100,12 +101,120 @@ async def test_owner_reads_released_current_analysis_through_public_dto_only(
         "mover",
         "quality",
         "centipawn_loss",
+        "alternative_san",
+        "after_position_centipawns",
     }
+    assert tuple(move["after_position_centipawns"] for move in payload["moves"]) == (1, 2)
     assert payload["moves"][0]["quality"] == "BEST"
+    assert payload["moves"][0]["alternative_san"] is None
     assert payload["white"]["accuracy"] == "99.01"
     assert payload["black"]["accuracy"] == "97.09"
     assert _all_keys(payload).isdisjoint(FORBIDDEN_PUBLIC_KEYS)
-    assert await _counts(auth_database_session) == before
+    assert await _counts(auth_database_session) == (0, 0, 0)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("centipawns", "mate_in", "expected"),
+    [
+        (0, None, 0),
+        (None, 3, None),
+    ],
+)
+async def test_after_position_centipawns_preserves_zero_and_maps_mate_to_null(
+    centipawns: int | None,
+    mate_in: int | None,
+    expected: int | None,
+    auth_client: httpx.AsyncClient,
+    auth_database_session: AsyncSession,
+) -> None:
+    job, run = await _completed_snapshot(auth_database_session)
+    game = await auth_database_session.get(Game, job.game_id)
+    assert game is not None
+    game.status = GameStatus.ANALYSIS_AVAILABLE
+    await auth_database_session.execute(
+        update(AnalysisPositionEvaluation)
+        .where(
+            AnalysisPositionEvaluation.analysis_run_id == run.id,
+            AnalysisPositionEvaluation.ply == 1,
+        )
+        .values(centipawns=centipawns, mate_in=mate_in)
+    )
+    await auth_database_session.commit()
+
+    response = await auth_client.get(
+        f"/api/v1/analysis/games/{job.game_id}",
+        headers={"Authorization": f"Bearer {_token(job.owner_user_id)}"},
+    )
+
+    assert response.status_code == 200
+    first_move = response.json()["moves"][0]
+    assert first_move["ply"] == 1
+    assert first_move["after_position_centipawns"] == expected
+    assert type(first_move["after_position_centipawns"]) is type(expected)
+
+
+@pytest.mark.asyncio
+async def test_public_move_includes_only_a_different_legal_post_game_alternative(
+    auth_client: httpx.AsyncClient,
+    auth_database_session: AsyncSession,
+) -> None:
+    job, run = await _completed_snapshot(auth_database_session)
+    game = await auth_database_session.get(Game, job.game_id)
+    assert game is not None
+    game.status = GameStatus.ANALYSIS_AVAILABLE
+    await auth_database_session.execute(
+        update(AnalysisPositionEvaluation)
+        .where(
+            AnalysisPositionEvaluation.analysis_run_id == run.id,
+            AnalysisPositionEvaluation.ply == 0,
+        )
+        .values(best_move_uci="d2d4", principal_variation_uci=["d2d4"])
+    )
+    await auth_database_session.commit()
+
+    response = await auth_client.get(
+        f"/api/v1/analysis/games/{job.game_id}",
+        headers={"Authorization": f"Bearer {_token(job.owner_user_id)}"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["moves"][0]["alternative_san"] == "d4"
+
+
+@pytest.mark.asyncio
+async def test_after_position_projection_fails_closed_for_wrong_same_run_link(
+    auth_client: httpx.AsyncClient,
+    auth_database_session: AsyncSession,
+) -> None:
+    job, run = await _completed_snapshot(auth_database_session)
+    game = await auth_database_session.get(Game, job.game_id)
+    assert game is not None
+    game.status = GameStatus.ANALYSIS_AVAILABLE
+    wrong_after = await auth_database_session.scalar(
+        select(AnalysisPositionEvaluation.id).where(
+            AnalysisPositionEvaluation.analysis_run_id == run.id,
+            AnalysisPositionEvaluation.ply == 2,
+        )
+    )
+    assert wrong_after is not None
+    await auth_database_session.execute(
+        update(AnalysisMoveEvaluation)
+        .where(
+            AnalysisMoveEvaluation.analysis_run_id == run.id,
+            AnalysisMoveEvaluation.ply == 1,
+        )
+        .values(after_position_evaluation_id=wrong_after)
+    )
+    await auth_database_session.commit()
+
+    response = await auth_client.get(
+        f"/api/v1/analysis/games/{job.game_id}",
+        headers={"Authorization": f"Bearer {_token(job.owner_user_id)}"},
+    )
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "analysis_unavailable"
 
 
 @pytest.mark.asyncio

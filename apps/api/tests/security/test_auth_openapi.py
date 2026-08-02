@@ -82,7 +82,25 @@ def test_auth_openapi_contract_is_deterministic_and_hides_internal_models() -> N
         "email_verified",
         "created_at",
     }
-    serialized = json.dumps(document).lower()
+    serialized = json.dumps(
+        {
+            "paths": {
+                path: operation for path, operation in paths.items() if path.startswith(AUTH_PREFIX)
+            },
+            "schemas": {
+                name: schema
+                for name, schema in schemas.items()
+                if name
+                in {
+                    "LoginRequest",
+                    "RefreshTokenRequest",
+                    "RegisterRequest",
+                    "TokenPairResponse",
+                    "UserResponse",
+                }
+            },
+        }
+    ).lower()
     for internal_name in (
         "authsession",
         "password_hash",

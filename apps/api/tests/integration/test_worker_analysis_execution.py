@@ -11,8 +11,12 @@ from boardtrace_api.analysis.full_game import CompletedGameAnalysisInput, FullGa
 from boardtrace_api.analysis.queue import AnalysisTaskPayload
 from boardtrace_api.config import Settings
 from boardtrace_api.models import AnalysisJob, AnalysisRun, Game
-from boardtrace_api.models.enums import AnalysisJobStatus
+from boardtrace_api.models.enums import AnalysisJobStatus, GameStatus
 from boardtrace_api.repositories.analysis_jobs import AnalysisJobRepository
+from boardtrace_api.services.analysis_delivery import (
+    PublicAnalysisNotFoundError,
+    compose_public_analysis_read_service,
+)
 from boardtrace_api.services.analysis_jobs import AnalysisJobService
 from tests.integration.test_analysis_job_orchestration import completed_game
 from tests.integration.test_analysis_result_persistence import _result
@@ -41,6 +45,8 @@ async def test_worker_runs_server_game_then_atomically_persists_and_completes(
     RecordingAnalyzer.games.clear()
     RecordingAnalyzer.budgets.clear()
     game = await completed_game(auth_database_session)
+    game.normalized_moves = ["e2e4", "e7e5"]
+    await auth_database_session.flush()
     job = await AnalysisJobService(auth_database_session).create_for_completed_game(
         game.id, uuid4()
     )
@@ -71,9 +77,21 @@ async def test_worker_runs_server_game_then_atomically_persists_and_completes(
     persisted_game = await auth_database_session.get(Game, game_id)
     assert persisted_job is not None and persisted_job.status is AnalysisJobStatus.SUCCEEDED
     assert persisted_job.worker_id is None
-    assert persisted_game is not None and persisted_game.analysis_available_at is None
+    assert persisted_game is not None
+    assert persisted_game.status is GameStatus.ANALYSIS_AVAILABLE
+    assert persisted_game.analysis_available_at is not None
     assert await auth_database_session.scalar(select(func.count(AnalysisRun.id))) == 1
     assert len(RecordingAnalyzer.games) == 1
     assert RecordingAnalyzer.games[0].normalized_moves_uci == expected_moves
     assert RecordingAnalyzer.games[0].completion_verified_at == expected_completion
     assert len(RecordingAnalyzer.budgets) == 1
+    owner_response = await compose_public_analysis_read_service(
+        auth_database_session
+    ).read_for_owner(game_id, game.user_id)
+    assert owner_response.game_id == game_id
+    assert len(owner_response.moves) == len(expected_moves)
+    with pytest.raises(PublicAnalysisNotFoundError):
+        await compose_public_analysis_read_service(auth_database_session).read_for_owner(
+            game_id,
+            uuid4(),
+        )

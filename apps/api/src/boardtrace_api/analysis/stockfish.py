@@ -150,8 +150,19 @@ class StockfishEngine:
         authorization: PostGameEngineAuthorization,
         request: StockfishAnalysisRequest,
     ) -> StockfishAnalysisResult:
-        authorization.require_execution_allowed()
+        try:
+            authorization.require_execution_allowed()
+        except EngineExecutionForbidden:
+            logger.info(
+                "stockfish_eligibility_denied",
+                extra={"outcome": "denied", "error_code": "game_not_eligible"},
+            )
+            raise
         if authorization.game_id != request.game_id:
+            logger.info(
+                "stockfish_eligibility_denied",
+                extra={"outcome": "denied", "error_code": "authorization_mismatch"},
+            )
             raise EngineExecutionForbidden("engine authorization does not match the requested game")
         self._parse_board(request.fen)
         with self.analysis_session(authorization) as session:
@@ -262,15 +273,29 @@ class StockfishAnalysisSession:
             engine = self._owner._start_engine()
             engine.configure({"Threads": self._owner._threads, "Hash": self._owner._hash_mb})
             self._engine = engine
+            logger.info("stockfish_process_started", extra={"outcome": "success"})
             return self
         except BaseException as error:
             if engine is not None:
                 self._owner._stop_engine(engine)
             self._owner._execution_lock.release()
             if isinstance(error, TimeoutError):
+                logger.warning(
+                    "stockfish_process_start_failed",
+                    extra={"outcome": "failure", "error_code": "engine_timeout"},
+                )
                 raise StockfishAnalysisTimeout("Stockfish configuration timed out") from error
             if isinstance(error, chess.engine.EngineError):
+                logger.warning(
+                    "stockfish_process_start_failed",
+                    extra={"outcome": "failure", "error_code": "engine_crash"},
+                )
                 raise StockfishExecutionError("Stockfish configuration failed") from error
+            if isinstance(error, StockfishUnavailable):
+                logger.warning(
+                    "stockfish_process_start_failed",
+                    extra={"outcome": "failure", "error_code": "engine_unavailable"},
+                )
             raise
 
     def __exit__(
@@ -284,6 +309,7 @@ class StockfishAnalysisSession:
         try:
             if engine is not None:
                 self._owner._stop_engine(engine)
+                logger.info("stockfish_process_stopped", extra={"outcome": "success"})
         finally:
             self._owner._execution_lock.release()
 
@@ -304,15 +330,29 @@ class StockfishAnalysisSession:
                     else None,
                 ),
             )
-            return self._owner._build_result(request, board, info, engine)
+            result = self._owner._build_result(request, board, info, engine)
+            logger.info("stockfish_analysis_completed", extra={"outcome": "success"})
+            return result
         except TimeoutError as error:
             self._invalidate(engine)
+            logger.warning(
+                "stockfish_analysis_failed",
+                extra={"outcome": "failure", "error_code": "engine_timeout"},
+            )
             raise StockfishAnalysisTimeout("Stockfish analysis timed out") from error
         except chess.engine.EngineError as error:
             self._invalidate(engine)
+            logger.warning(
+                "stockfish_analysis_failed",
+                extra={"outcome": "failure", "error_code": "engine_crash"},
+            )
             raise StockfishExecutionError("Stockfish analysis failed") from error
         except StockfishExecutionError:
             self._invalidate(engine)
+            logger.warning(
+                "stockfish_analysis_failed",
+                extra={"outcome": "failure", "error_code": "engine_invalid_output"},
+            )
             raise
 
     def _invalidate(self, engine: UciEngine) -> None:

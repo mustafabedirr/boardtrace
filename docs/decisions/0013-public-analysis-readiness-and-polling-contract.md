@@ -19,20 +19,20 @@ accuracy, engine output, or player aggregates.
 The current job is selected by descending analysis version, creation time, and
 ID. Public mapping is:
 
-- no job: `NOT_STARTED`;
-- pending, queued, or retry scheduled: `QUEUED`;
-- claimed or running: `RUNNING`;
-- failed or cancelled: `FAILED`;
+- no job: `unavailable`;
+- pending, queued, or retry scheduled: `queued`;
+- claimed or running: `running`;
+- failed or cancelled: `failed`;
 - succeeded plus an exact current version/generation complete run and
-  `ANALYSIS_AVAILABLE`: `READY`;
-- every inconsistent combination fails closed as `FAILED`.
+  `ANALYSIS_AVAILABLE`: `available`;
+- every inconsistent combination fails closed as `failed`.
 
 Historical successful runs are never used when a newer job exists. Job IDs,
 run IDs, versions, lease generations, attempts, worker identity, timestamps,
 failure details, and retry lifecycle state remain internal. The exact public
-enum is `NOT_STARTED`, `QUEUED`, `RUNNING`, `READY`, and `FAILED`.
+enum is `unavailable`, `queued`, `running`, `available`, and `failed`.
 
-Clients may retry only `QUEUED` and `RUNNING`. Suggested delays remain 2
+Clients may retry only `queued` and `running`. Suggested delays remain 2
 seconds for ordinary queued work, 3 seconds for running work, and 5 seconds
 when the internally encapsulated job state is retry-scheduled. The contract
 retains a 2-second minimum, 15-second maximum, and 1.5 backoff multiplier. The

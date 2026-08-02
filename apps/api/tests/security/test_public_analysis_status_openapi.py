@@ -26,19 +26,20 @@ def test_status_openapi_is_separate_bounded_and_result_free() -> None:
     }
     assert polling_schema["additionalProperties"] is False
     assert readiness_schema["enum"] == [
-        "NOT_STARTED",
-        "QUEUED",
-        "RUNNING",
-        "READY",
-        "FAILED",
+        "unavailable",
+        "queued",
+        "running",
+        "available",
+        "failed",
     ]
     assert operation["responses"]["200"]["content"]["application/json"]["schema"] == {
         "$ref": "#/components/schemas/PublicAnalysisStatusResponse"
     }
     serialized = str(operation) + str(status_schema) + str(polling_schema)
-    assert "PROCESSING" not in str(readiness_schema)
-    assert "RETRYING" not in str(readiness_schema)
-    assert "UNAVAILABLE" not in str(readiness_schema)
+    assert "processing" not in str(readiness_schema)
+    assert "retrying" not in str(readiness_schema)
+    assert "NOT_STARTED" not in str(readiness_schema)
+    assert "READY" not in str(readiness_schema)
     for forbidden in (
         "PublicGameAnalysisResponse",
         "moves",

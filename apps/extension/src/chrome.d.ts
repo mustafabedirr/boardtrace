@@ -10,9 +10,16 @@ declare namespace chrome {
   }
 
   interface Runtime {
-    sendMessage(message: unknown): Promise<void>;
+    readonly id: string;
+    sendMessage(message: unknown): Promise<unknown>;
     readonly onMessage: {
-      addListener(listener: (message: unknown) => void): void;
+      addListener(
+        listener: (
+          message: unknown,
+          sender: unknown,
+          sendResponse: (response: unknown) => void,
+        ) => boolean | void,
+      ): void;
     };
   }
 
@@ -24,11 +31,26 @@ declare namespace chrome {
   }
 
   interface Tabs {
+    query(query: {
+      readonly active: boolean;
+      readonly currentWindow: boolean;
+    }): Promise<readonly Tab[]>;
     sendMessage(tabId: number, message: unknown): Promise<void>;
+  }
+
+  interface StorageArea {
+    get(key: string): Promise<Record<string, unknown>>;
+    remove(key: string): Promise<void>;
+    set(items: Record<string, unknown>): Promise<void>;
+  }
+
+  interface Storage {
+    readonly session: StorageArea;
   }
 
   const action: Action;
   const runtime: Runtime;
   const scripting: Scripting;
+  const storage: Storage;
   const tabs: Tabs;
 }

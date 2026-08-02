@@ -24,6 +24,17 @@ async def test_liveness_response_matches_its_public_schema() -> None:
 
 
 @pytest.mark.anyio
+async def test_minimum_anonymous_health_exposes_no_metadata() -> None:
+    transport = httpx.ASGITransport(app=create_app(Settings()))
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        response = await client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+    assert set(response.json()) == {"status"}
+
+
+@pytest.mark.anyio
 async def test_readiness_returns_unavailable_when_database_cannot_be_reached(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

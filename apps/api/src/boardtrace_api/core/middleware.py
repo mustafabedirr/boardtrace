@@ -37,6 +37,7 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
                     "status_code": response.status_code,
                     "duration_ms": duration_ms,
                     "environment": request.app.state.settings.environment.value,
+                    "outcome": "success" if response.status_code < 400 else "failure",
                 },
             )
             response.headers[request.app.state.settings.request_id_header] = request_id

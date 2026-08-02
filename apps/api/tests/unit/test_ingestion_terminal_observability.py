@@ -1,3 +1,4 @@
+import json
 import logging
 from typing import cast
 from uuid import uuid4
@@ -10,6 +11,7 @@ from boardtrace_api.ingestion_observability import (
     LoggingIngestionTerminalObserver,
     get_ingestion_terminal_observer,
 )
+from boardtrace_api.logging import JsonFormatter
 
 
 class RecordCollector(logging.Handler):
@@ -126,3 +128,38 @@ async def test_logging_observer_records_success_without_failure_or_payload_field
     assert record.game_id == str(game_id)
     assert record.error_type is None
     assert not hasattr(record, "payload")
+
+
+@pytest.mark.asyncio
+async def test_ingestion_outcome_survives_json_format_without_private_identifiers() -> None:
+    observer = LoggingIngestionTerminalObserver()
+    logger = logging.getLogger("boardtrace_api.ingestion")
+    handler = RecordCollector()
+    previous_level, previous_propagate, previous_disabled = (
+        logger.level,
+        logger.propagate,
+        logger.disabled,
+    )
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+    logger.disabled = False
+    logger.addHandler(handler)
+    try:
+        await observer.record_terminal_outcome(
+            outcome=IngestionTerminalOutcome.SUCCESS,
+            operation="completed_game_ingestion",
+            game_id=None,
+            error_type=None,
+        )
+    finally:
+        logger.removeHandler(handler)
+        logger.setLevel(previous_level)
+        logger.propagate = previous_propagate
+        logger.disabled = previous_disabled
+
+    payload = json.loads(JsonFormatter().format(handler.records[-1]))
+    assert payload["event"] == "ingestion_terminal_outcome"
+    assert payload["component"] == "boardtrace_api.ingestion"
+    assert payload["operation"] == "completed_game_ingestion"
+    assert payload["outcome"] == "success"
+    assert "game_id" not in payload

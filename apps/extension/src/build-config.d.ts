@@ -1,0 +1,1 @@
+declare const __BOARDTRACE_EXTENSION_API_BASE_URL__: string;

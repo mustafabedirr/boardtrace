@@ -9,19 +9,33 @@ from boardtrace_api.services.analysis_status import map_public_readiness
 
 
 def test_public_readiness_enum_has_exactly_five_product_states() -> None:
+    assert tuple(PublicAnalysisReadiness.__members__) == (
+        "UNAVAILABLE",
+        "QUEUED",
+        "RUNNING",
+        "AVAILABLE",
+        "FAILED",
+    )
     assert tuple(PublicAnalysisReadiness) == (
-        PublicAnalysisReadiness.NOT_STARTED,
+        PublicAnalysisReadiness.UNAVAILABLE,
         PublicAnalysisReadiness.QUEUED,
         PublicAnalysisReadiness.RUNNING,
-        PublicAnalysisReadiness.READY,
+        PublicAnalysisReadiness.AVAILABLE,
         PublicAnalysisReadiness.FAILED,
+    )
+    assert tuple(state.value for state in PublicAnalysisReadiness) == (
+        "unavailable",
+        "queued",
+        "running",
+        "available",
+        "failed",
     )
 
 
 @pytest.mark.parametrize(
     ("job_status", "has_run", "game_status", "expected"),
     [
-        (None, False, GameStatus.FINISHED, PublicAnalysisReadiness.NOT_STARTED),
+        (None, False, GameStatus.FINISHED, PublicAnalysisReadiness.UNAVAILABLE),
         (
             AnalysisJobStatus.PENDING,
             False,
@@ -68,7 +82,7 @@ def test_public_readiness_enum_has_exactly_five_product_states() -> None:
             AnalysisJobStatus.SUCCEEDED,
             True,
             GameStatus.ANALYSIS_AVAILABLE,
-            PublicAnalysisReadiness.READY,
+            PublicAnalysisReadiness.AVAILABLE,
         ),
         (
             AnalysisJobStatus.SUCCEEDED,

@@ -1,7 +1,7 @@
 """Opt-in end-to-end internal result persistence with native Stockfish and PostgreSQL."""
 
 import os
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
@@ -78,6 +78,7 @@ async def test_real_stockfish_full_game_persists_and_typed_reads_from_fresh_sess
         analysis_version=1,
         lease_generation=1,
         worker_id="stockfish-runtime-worker",
+        lease_expires_at=datetime.now(UTC) + timedelta(minutes=5),
     )
     auth_database_session.add(job)
     await auth_database_session.commit()

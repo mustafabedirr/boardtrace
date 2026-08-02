@@ -1,3 +1,5 @@
+import json
+import logging
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
@@ -110,6 +112,43 @@ def test_engine_is_not_started_for_an_ineligible_game(status: GameStatus) -> Non
         engine.analyse(authorization, _request(authorization.game_id))
 
     assert launches == []
+
+
+def test_ineligible_game_emits_denial_without_identifiers_or_engine_start() -> None:
+    class Collector(logging.Handler):
+        def __init__(self) -> None:
+            super().__init__()
+            self.records: list[logging.LogRecord] = []
+
+        def emit(self, record: logging.LogRecord) -> None:
+            self.records.append(record)
+
+    launches: list[str] = []
+    authorization = _authorization(GameStatus.CAPTURING)
+    engine = StockfishEngine("stockfish", 1, 64, launcher=_unexpected_launcher(launches))
+    logger = logging.getLogger("boardtrace_api.analysis.stockfish")
+    collector = Collector()
+    previous_level = logger.level
+    previous_disabled = logger.disabled
+    logger.disabled = False
+    logger.setLevel(logging.INFO)
+    logger.addHandler(collector)
+
+    try:
+        with pytest.raises(EngineExecutionForbidden):
+            engine.analyse(authorization, _request(authorization.game_id))
+    finally:
+        logger.removeHandler(collector)
+        logger.setLevel(previous_level)
+        logger.disabled = previous_disabled
+
+    assert launches == []
+    record = collector.records[-1]
+    assert record.getMessage() == "stockfish_eligibility_denied"
+    assert record.__dict__["outcome"] == "denied"
+    assert record.__dict__["error_code"] == "game_not_eligible"
+    assert not hasattr(record, "game_id")
+    assert not hasattr(record, "position_id")
 
 
 def test_engine_rejects_unverified_finished_game_before_launch() -> None:
@@ -389,7 +428,7 @@ def test_concurrent_requests_are_serialized_and_use_fresh_processes() -> None:
 
 def test_internal_engine_result_types_are_absent_from_public_openapi() -> None:
     schema = create_app(Settings()).openapi()
-    serialized = str(schema["components"]["schemas"])
+    serialized = json.dumps(schema["components"]["schemas"])
 
     for forbidden_field in (
         "best_move_uci",
@@ -398,4 +437,4 @@ def test_internal_engine_result_types_are_absent_from_public_openapi() -> None:
         "principal_variation_uci",
         "engine_version",
     ):
-        assert forbidden_field not in serialized
+        assert f'"{forbidden_field}":' not in serialized

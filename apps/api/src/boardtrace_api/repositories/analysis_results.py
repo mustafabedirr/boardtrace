@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from datetime import datetime
 from uuid import UUID, uuid5
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from boardtrace_api.analysis.full_game import FullGameAnalysisResult, FullGameAnalysisStatus
@@ -68,6 +68,8 @@ class AnalysisResultRepository:
             or job.status != AnalysisJobStatus.RUNNING
             or job.worker_id != worker_id
             or job.lease_generation != lease_generation
+            or job.lease_expires_at is None
+            or job.lease_expires_at <= finished_at
             or job.game_id != result.game_id
             or game.status not in {GameStatus.FINISHED, GameStatus.DEEP_ANALYSIS_RUNNING}
             or game.completion_verified_at is None
@@ -160,6 +162,115 @@ class AnalysisResultRepository:
         await self._session.flush()
         return run
 
+    async def get_idempotent_available_generation(
+        self,
+        *,
+        job_id: UUID,
+        lease_generation: int,
+    ) -> AnalysisRun | None:
+        """Return only the already-published exact authoritative generation."""
+        job = await self._session.scalar(
+            select(AnalysisJob).where(AnalysisJob.id == job_id).with_for_update()
+        )
+        if job is None:
+            return None
+        game = await self._session.scalar(
+            select(Game).where(Game.id == job.game_id).with_for_update()
+        )
+        run = await self._session.scalar(
+            select(AnalysisRun).where(
+                AnalysisRun.id == analysis_run_id(job_id, lease_generation),
+                AnalysisRun.analysis_job_id == job_id,
+                AnalysisRun.game_id == job.game_id,
+                AnalysisRun.lease_generation == lease_generation,
+                AnalysisRun.analysis_version == job.analysis_version,
+                AnalysisRun.status == AnalysisRunStatus.COMPLETE,
+            )
+        )
+        if (
+            game is None
+            or run is None
+            or job.status is not AnalysisJobStatus.SUCCEEDED
+            or job.lease_generation != lease_generation
+            or game.status is not GameStatus.ANALYSIS_AVAILABLE
+            or game.analysis_available_at is None
+        ):
+            return None
+        current_job_id = await self._current_job_id(game.id)
+        return run if current_job_id == job.id else None
+
+    async def make_owned_generation_available(
+        self,
+        *,
+        run: AnalysisRun,
+        job_id: UUID,
+        lease_generation: int,
+        available_at: datetime,
+    ) -> None:
+        """Publish the exact completed winner after its job succeeds in this transaction."""
+        job = await self._session.scalar(
+            select(AnalysisJob).where(AnalysisJob.id == job_id).with_for_update()
+        )
+        game = (
+            await self._session.scalar(select(Game).where(Game.id == job.game_id).with_for_update())
+            if job is not None
+            else None
+        )
+        position_count = await self._session.scalar(
+            select(func.count(AnalysisPositionEvaluation.id)).where(
+                AnalysisPositionEvaluation.analysis_run_id == run.id
+            )
+        )
+        move_count = await self._session.scalar(
+            select(func.count(AnalysisMoveEvaluation.id)).where(
+                AnalysisMoveEvaluation.analysis_run_id == run.id
+            )
+        )
+        current_job_id = await self._current_job_id(game.id) if game is not None else None
+        if (
+            job is None
+            or game is None
+            or job.status is not AnalysisJobStatus.SUCCEEDED
+            or job.id != run.analysis_job_id
+            or job.game_id != run.game_id
+            or job.lease_generation != lease_generation
+            or run.id != analysis_run_id(job_id, lease_generation)
+            or run.lease_generation != lease_generation
+            or run.analysis_version != job.analysis_version
+            or run.status is not AnalysisRunStatus.COMPLETE
+            or run.failure_code is not None
+            or run.failure_error_type is not None
+            or position_count != run.evaluated_positions
+            or move_count != run.completed_moves
+            or run.total_positions != run.evaluated_positions
+            or run.total_moves != run.completed_moves
+            or current_job_id != job.id
+            or game.status not in {GameStatus.FINISHED, GameStatus.DEEP_ANALYSIS_RUNNING}
+            or game.completion_verified_at is None
+            or game.normalized_moves is None
+            or game.ingestion_payload_hash is None
+            or len(game.normalized_moves) != run.completed_moves
+        ):
+            raise AnalysisRunAuthorityError(
+                "completed generation does not own analysis availability"
+            )
+        game.status = GameStatus.ANALYSIS_AVAILABLE
+        game.analysis_available_at = available_at
+        await self._session.flush()
+
+    async def _current_job_id(self, game_id: UUID) -> UUID | None:
+        current_job_id: UUID | None = await self._session.scalar(
+            select(AnalysisJob.id)
+            .where(AnalysisJob.game_id == game_id)
+            .order_by(
+                AnalysisJob.analysis_version.desc(),
+                AnalysisJob.created_at.desc(),
+                AnalysisJob.id.desc(),
+            )
+            .limit(1)
+        )
+        return current_job_id
+
     async def get_generation_records(
         self, job_id: UUID, lease_generation: int
     ) -> (
@@ -193,6 +304,23 @@ class AnalysisResultRepository:
             )
         )
         return run, positions, moves
+
+    async def consume_public_generation(self, run_id: UUID, game_id: UUID) -> bool:
+        """Atomically consume one session result and remove durable analysis payloads."""
+        deleted = await self._session.scalar(
+            delete(AnalysisRun)
+            .where(AnalysisRun.id == run_id, AnalysisRun.game_id == game_id)
+            .returning(AnalysisRun.id)
+        )
+        if deleted is None:
+            return False
+        game = await self._session.scalar(select(Game).where(Game.id == game_id).with_for_update())
+        if game is None:
+            return False
+        game.status = GameStatus.FINISHED
+        game.analysis_available_at = None
+        await self._session.flush()
+        return True
 
 
 def analysis_run_id(job_id: UUID, lease_generation: int) -> UUID:
